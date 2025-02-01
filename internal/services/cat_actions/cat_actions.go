@@ -1,4 +1,4 @@
-package main
+package cat_actions
 
 import (
 	"fmt"
@@ -7,16 +7,24 @@ import (
 	"time"
 )
 
-// CatActions represents the cat's actions and state
-type CatActions struct {
+type CatActions interface {
+	AdjustLoveMeter(action string)
+	GetLoveMeter() int
+	GetActions() []string
+	GetRandomAction() string
+	IncreaseLoveMeter()
+}
+
+// CatActionsImpl represents the cat's actions and state
+type CatActionsImpl struct {
 	Actions       []string
 	RandomActions []string
 	LoveMeter     int
 }
 
-// NewCatActions creates a new CatActions instance
-func NewCatActions() *CatActions {
-	return &CatActions{
+// NewCatActions creates a new CatActionsImpl instance
+func NewCatActions() *CatActionsImpl {
+	return &CatActionsImpl{
 		Actions: []string{
 			"purr", "meow", "hiding", "hiss", "jump", "play", "scratch", "rub against", "surprise",
 		},
@@ -25,7 +33,7 @@ func NewCatActions() *CatActions {
 	}
 }
 
-func (ca *CatActions) AdjustLoveMeter(action string) {
+func (ca *CatActionsImpl) AdjustLoveMeter(action string) {
 	switch action {
 	case "pet", "feed":
 		ca.LoveMeter += 10
@@ -44,23 +52,23 @@ func (ca *CatActions) AdjustLoveMeter(action string) {
 	}
 }
 
-func (ca *CatActions) GetLoveMeter() int {
+func (ca *CatActionsImpl) GetLoveMeter() int {
 	return ca.LoveMeter
 }
 
 // GetActions returns the list of actions
-func (ca *CatActions) GetActions() []string {
+func (ca *CatActionsImpl) GetActions() []string {
 	return ca.Actions
 }
 
 // GetRandomAction returns a random action from RandomActions
-func (ca *CatActions) GetRandomAction() string {
+func (ca *CatActionsImpl) GetRandomAction() string {
 	rand.Seed(time.Now().UnixNano())
 	return ca.RandomActions[rand.Intn(len(ca.RandomActions))]
 }
 
 // IncreaseLoveMeter increases the love meter by 1
-func (ca *CatActions) IncreaseLoveMeter() {
+func (ca *CatActionsImpl) IncreaseLoveMeter() {
 	ca.LoveMeter++
 }
 
@@ -86,7 +94,7 @@ func (a *Action) CanProcess(message string) bool {
 }
 
 // Process handles the action logic based on the message and updates the cat state
-func (a *Action) Process(message string, cat *CatActions) {
+func (a *Action) Process(message string, cat *CatActionsImpl) {
 	message = strings.ToLower(message)
 	parts := strings.Split(message, a.Needle)
 

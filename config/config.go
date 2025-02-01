@@ -7,10 +7,9 @@ import (
 )
 
 type Config struct {
-	AppConfig  AppConfig  `env:"APPCONFIG"`
-	IRCConfig  IRCConfig  `env:"IRCCONFIG"`
-	DBConfig   DBConfig   `env:"DBCONFIG"`
-	GameConfig GameConfig `env:"GAMECONFIG"`
+	AppConfig AppConfig `env:"APPCONFIG"`
+	IRCConfig IRCConfig `env:"IRCCONFIG"`
+	DBConfig  DBConfig  `env:"DBCONFIG"`
 }
 
 type AppConfig struct {
@@ -38,10 +37,6 @@ type DBConfig struct {
 	Password string `required:"true" env:"DBPASSWORD" default:"mysecretpassword"`
 	Port     uint   `default:"5432" env:"DBPORT"`
 	SSLMode  string `default:"disable" env:"DBSSL"`
-}
-
-type GameConfig struct {
-	Interval int `env:"INTERVAL" default:"10"`
 }
 
 func LoadConfigOrPanic() Config {

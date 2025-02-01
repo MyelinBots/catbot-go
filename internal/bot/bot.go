@@ -1,146 +1,152 @@
 package bot
 
 import (
-	"catbot/config"
+	"context"
 	"crypto/tls"
 	"fmt"
-	"math/rand"
-	"strings"
+	"github.com/MyelinBots/catbot-go/config"
+	"github.com/MyelinBots/catbot-go/internal/healthcheck"
+	"github.com/MyelinBots/catbot-go/internal/services/catbot"
+	"github.com/MyelinBots/catbot-go/internal/services/commands"
+	irc "github.com/fluffle/goirc/client"
 	"sync"
-	"time"
-
-	irc "github.com/thoj/go-ircevent"
 )
 
-// CatActions handles the love meter and random responses for the cat
-type CatActions struct {
-	LoveMeter    int
-	IsCatPresent bool
-	Responses    []string
+type GameStarted struct {
 	sync.Mutex
+	started bool
 }
 
-// NewCatActions creates a new CatActions instance
-func NewCatActions() *CatActions {
-	return &CatActions{
-		LoveMeter:    0,
-		IsCatPresent: false,
-		Responses: []string{
-			"purr", "meow", "hiding", "hiss", "jump", "play", "scratch", "rub against", "surprise",
-		},
-	}
+type Identified struct {
+	sync.Mutex
+	identified bool
 }
 
-// AdjustLoveMeter adjusts the love meter for specific actions
-func (ca *CatActions) AdjustLoveMeter(action string) string {
-	ca.Lock()
-	defer ca.Unlock()
-
-	switch action {
-	case "pet", "feed":
-		ca.LoveMeter += 10
-		if ca.LoveMeter > 100 {
-			ca.LoveMeter = 100
-		}
-		return fmt.Sprintf("purrito purrs happily! Love Meter: %d", ca.LoveMeter)
-	case "kick":
-		ca.LoveMeter -= 10
-		if ca.LoveMeter < 0 {
-			ca.LoveMeter = 0
-		}
-		return fmt.Sprintf("purrito hisses angrily! Love Meter: %d", ca.LoveMeter)
-	default:
-		return "purrito doesn't respond."
-	}
-}
-
-// GetRandomResponse generates a random cat response
-func (ca *CatActions) GetRandomResponse() string {
-	rand.Seed(time.Now().UnixNano())
-	return ca.Responses[rand.Intn(len(ca.Responses))]
-}
-
-// StartBot starts the CatBot
 func StartBot() error {
 	cfg := config.LoadConfigOrPanic()
 
-	fmt.Printf("Starting CatBot with config: %+v\n", cfg)
+	started := &GameStarted{
+		started: false,
+	}
 
-	// Create a new IRC client
-	c := irc.IRC(cfg.IRCConfig.Nick, cfg.IRCConfig.Nick)
-	c.UseTLS = cfg.IRCConfig.SSL
-	c.TLSConfig = &tls.Config{
+	identified := &Identified{
+		identified: false,
+	}
+
+	fmt.Printf("Starting bot with config: %+v\n", cfg)
+	//database := db.NewDatabase(cfg.DBConfig)
+	//playerRepo := player.NewPlayerRepository(database)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	healthcheck.StartHealthcheck(ctx, cfg.AppConfig)
+
+	ircConfig := irc.NewConfig(cfg.IRCConfig.Nick)
+	ircConfig.SSL = cfg.IRCConfig.SSL
+	ircConfig.SSLConfig = &tls.Config{
 		InsecureSkipVerify: true,
 	}
-	serverAddress := fmt.Sprintf("%s:%d", cfg.IRCConfig.Host, cfg.IRCConfig.Port)
+	ircConfig.Server = fmt.Sprintf("%s:%d", cfg.IRCConfig.Host, cfg.IRCConfig.Port)
 
-	cat := NewCatActions()
+	c := irc.Client(ircConfig)
 
-	// Handle connected event
-	c.AddCallback("001", func(e *irc.Event) {
+	// gameInstance := game.NewGame(cfg.GameConfig, c, playerRepo, cfg.IRCConfig.Network, cfg.IRCConfig.Channels[0])
+	gameInstance := catbot.NewCatBot(c, cfg.IRCConfig.Network, cfg.IRCConfig.Channels[0])
+
+	commandInstance := commands.NewCommandController(gameInstance)
+
+	commandInstance.AddCommand("!cat", gameInstance.HandleCatCommand)
+
+	c.HandleFunc(irc.CONNECTED, func(conn *irc.Conn, line *irc.Line) {
 		fmt.Printf("Connected to %s\n", cfg.IRCConfig.Host)
+		// list channels from config
+		fmt.Printf("Joining channel %v\n", cfg.IRCConfig)
+
 		for _, channel := range cfg.IRCConfig.Channels {
-			c.Join(channel)
-			fmt.Printf("Joined channel: %s\n", channel)
+			fmt.Printf("Joining channel %s\n", channel)
+			conn.Join(channel)
+		}
+
+	})
+
+	c.HandleFunc("422", func(conn *irc.Conn, line *irc.Line) {
+		for _, channel := range cfg.IRCConfig.Channels {
+			fmt.Printf("Joining channel %s\n", channel)
+			conn.Join(channel)
 		}
 	})
 
-	// Handle PRIVMSG event
-	c.AddCallback("PRIVMSG", func(e *irc.Event) {
-		message := e.Message()
-		user := e.Nick
-
-		if strings.HasPrefix(message, "!") {
-			command := strings.TrimPrefix(strings.ToLower(message), "!")
-
-			if cat.IsCatPresent {
-				switch command {
-				case "pet":
-					response := cat.AdjustLoveMeter("pet")
-					c.Privmsg(e.Arguments[0], fmt.Sprintf("%s pets the cat. %s", user, response))
-					c.Privmsg(e.Arguments[0], fmt.Sprintf("purrito response: %s", cat.GetRandomResponse()))
-				case "feed":
-					response := cat.AdjustLoveMeter("feed")
-					c.Privmsg(e.Arguments[0], fmt.Sprintf("%s feeds the cat. %s", user, response))
-					c.Privmsg(e.Arguments[0], fmt.Sprintf("purrito response: %s", cat.GetRandomResponse()))
-				default:
-					c.Privmsg(e.Arguments[0], fmt.Sprintf("%s: Unknown command. Try !pet or !feed.", user))
-				}
-			} else {
-				c.Privmsg(e.Arguments[0], fmt.Sprintf("%s: purrito is not here right now.", user))
-			}
+	c.HandleFunc("376", func(conn *irc.Conn, line *irc.Line) {
+		for _, channel := range cfg.IRCConfig.Channels {
+			fmt.Printf("Joining channel %s\n", channel)
+			conn.Join(channel)
 		}
 	})
 
-	// Handle random cat appearances
-	go func() {
-		for {
-			time.Sleep(time.Duration(rand.Intn(30)+10) * time.Second) // Random interval between 10-40 seconds
-			cat.IsCatPresent = true
-			for _, channel := range cfg.IRCConfig.Channels {
-				c.Privmsg(channel, "purrito has appeared! You can !pet or !feed it!")
-			}
-			time.Sleep(15 * time.Second) // Cat stays for 15 seconds
-			cat.IsCatPresent = false
-			for _, channel := range cfg.IRCConfig.Channels {
-				c.Privmsg(channel, "purrito has wandered off.")
-			}
+	c.HandleFunc(irc.JOIN, func(conn *irc.Conn, line *irc.Line) {
+		fmt.Printf("Joined %s\n", line.Args[0])
+		started.Lock()
+		defer started.Unlock()
+		// if channel is first channel in config
+		if line.Args[0] == cfg.IRCConfig.Channels[0] && !started.started {
+			go gameInstance.Start(ctx)
+			started.started = true
 		}
-	}()
 
-	// Handle disconnection
+		handleNickserv(cfg.IRCConfig, identified, conn)
+		return
+
+	})
+
+	c.HandleFunc(irc.INVITE, func(conn *irc.Conn, line *irc.Line) {
+
+		fmt.Printf("Invited to %s\n", line.Args[1])
+		conn.Join(line.Args[1])
+
+	})
+
+	c.HandleFunc(irc.PRIVMSG, func(conn *irc.Conn, line *irc.Line) {
+		// if message is !shoot
+		// if message is !start
+		if line.Args[1] == "!start" {
+			started.Lock()
+			defer started.Unlock()
+			if !started.started {
+				go gameInstance.Start(ctx)
+				started.started = true
+				return
+			}
+
+		}
+		err := commandInstance.HandleCommand(ctx, line)
+		if err != nil {
+			fmt.Printf("Error handling command: %s\n", err.Error())
+			return
+		}
+
+	})
+
 	quit := make(chan bool)
-	c.AddCallback("DISCONNECTED", func(e *irc.Event) {
-		fmt.Println("Disconnected from IRC")
+	c.HandleFunc(irc.DISCONNECTED, func(conn *irc.Conn, line *irc.Line) {
 		quit <- true
 	})
 
-	// Connect to the server
-	if err := c.Connect(serverAddress); err != nil { // Pass server address here
+	if err := c.Connect(); err != nil {
 		fmt.Printf("Connection error: %s\n", err.Error())
-		return err
 	}
 
 	<-quit
+
+	cancel()
 	return nil
+}
+
+func handleNickserv(cfg config.IRCConfig, identified *Identified, c *irc.Conn) {
+	identified.Lock()
+	defer identified.Unlock()
+
+	if !identified.identified && cfg.NickservPassword != "" {
+		// use nickserv command
+		command := fmt.Sprintf(cfg.NickservCommand, cfg.NickservPassword)
+		c.Raw(command)
+	}
 }

@@ -1,0 +1,8 @@
+
+CREATE TABLE IF NOT EXISTS player (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    lovemeter INT NOT NULL DEFAULT 0,
+    network VARCHAR(255) NOT NULL
+    channel VARCHAR(255) NOT NULL
+);

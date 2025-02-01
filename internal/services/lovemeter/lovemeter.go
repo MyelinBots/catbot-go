@@ -1,4 +1,4 @@
-package main
+package lovemeter
 
 import (
 	"fmt"
@@ -6,22 +6,27 @@ import (
 	"time"
 )
 
-type LoveMeter struct {
+type LoveMeter interface {
+	Increase(amount int)
+	Decrease(amount int)
+}
+
+type LoveMeterImpl struct {
 	Value int
 }
 
-func NewLoveMeter() *LoveMeter {
-	return &LoveMeter{Value: 50}
+func NewLoveMeter() LoveMeter {
+	return &LoveMeterImpl{Value: 50}
 }
 
-func (lm *LoveMeter) Increase(amount int) {
+func (lm *LoveMeterImpl) Increase(amount int) {
 	lm.Value += amount
 	if lm.Value > 100 {
 		lm.Value = 100
 	}
 }
 
-func (lm *LoveMeter) Decrease(amount int) {
+func (lm *LoveMeterImpl) Decrease(amount int) {
 	lm.Value -= amount
 	if lm.Value < 0 {
 		lm.Value = 0
@@ -38,11 +43,11 @@ func (a Action) Respond() string {
 }
 
 type CatActions struct {
-	LoveMeter *LoveMeter
+	LoveMeter *LoveMeterImpl
 	Actions   map[string]Action
 }
 
-func NewCatActions(loveMeter *LoveMeter) *CatActions {
+func NewCatActions(loveMeter *LoveMeterImpl) *CatActions {
 	return &CatActions{
 		LoveMeter: loveMeter,
 		Actions: map[string]Action{
@@ -105,7 +110,7 @@ func simulateIRCMessage(nick, message string, cat *CatActions) {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	loveMeter := &LoveMeter{Value: 50}
+	loveMeter := &LoveMeterImpl{Value: 50}
 	cat := NewCatActions(loveMeter)
 
 	// Simulating messages from users
