@@ -1,8 +1,9 @@
 package main
 
 import (
-	"catbot/internal/bot"
 	"log"
+
+	"github.com/MyelinBots/catbot-go/internal/bot"
 )
 
 func main() {
