@@ -2,6 +2,7 @@ package cat_actions
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
 )
@@ -29,18 +30,31 @@ func NewCatActions(lm lovemeter.LoveMeter) *CatActions {
 	}
 }
 
-func (ca *CatActions) ExecuteAction(actionName string) string {
+// ExecuteAction executes the given action (currently supports only "pet")
+func (ca *CatActions) ExecuteAction(actionName string, extras ...string) string {
 	action, exists := ca.Actions[actionName]
 	if !exists {
 		return "Unknown action."
 	}
 
-	if actionName == "pet" {
-		if ca.LoveMeter.Get() < 70 {
-			return "purrito doesn't want to be petted right now."
-		}
-		ca.LoveMeter.Increase(5)
+	// Extract target name (optional)
+	var target string
+	if len(extras) > 0 {
+		target = strings.ToLower(extras[0])
 	}
 
-	return fmt.Sprintf("%s Love meter: %d", action.Respond(), ca.LoveMeter.Get())
+	if actionName == "pet" {
+		if target != "purrito" {
+			return "You can only pet purrito."
+		}
+
+		if ca.LoveMeter.Get() < 70 {
+			return "purrito doesn't want to be petted right now. 😾"
+		}
+
+		ca.LoveMeter.Increase(5)
+		return fmt.Sprintf("%s Love meter: %d", action.Respond(), ca.LoveMeter.Get())
+	}
+
+	return "Unknown action."
 }

@@ -3,6 +3,8 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/MyelinBots/catbot-go/internal/services/catbot"
 	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 	irc "github.com/fluffle/goirc/client"
@@ -26,20 +28,28 @@ func NewCommandController(gameinstance catbot.CatBot) CommandController {
 }
 
 func (c *CommandControllerImpl) HandleCommand(ctx context.Context, line *irc.Line) error {
-	command := line.Args[1]
-	// args := line.Args[1:]
-	fmt.Println("Handling command:", command)
-	if handler, exists := c.commands[command]; exists {
-		fmt.Println("Handling command:", command)
-		ctx = context_manager.SetNickContext(ctx, line.Nick)
-		return handler(ctx, line.Args[2:]...)
-	} else {
+	if len(line.Args) < 2 {
 		return nil
 	}
+
+	raw := line.Args[1] // e.g., "!pet purrito"
+	parts := strings.Fields(raw)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	command := parts[0]
+	args := parts[1:]
+	fmt.Println("Handling command:", command)
+
+	if handler, exists := c.commands[command]; exists {
+		ctx = context_manager.SetNickContext(ctx, line.Nick)
+		return handler(ctx, args...)
+	}
+
+	return nil
 }
 
 func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx context.Context, args ...string) error) {
 	c.commands[command] = handler
-
-	return
 }
