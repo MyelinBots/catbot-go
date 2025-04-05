@@ -16,12 +16,12 @@ type CommandController interface {
 }
 
 type CommandControllerImpl struct {
-	game     catbot.CatBot
+	game     catbot.CatBotImpl
 	commands map[string]func(ctx context.Context, args ...string) error
 }
 
 // Constructor
-func NewCommandController(gameinstance catbot.CatBot) CommandController {
+func NewCommandController(gameinstance catbot.CatBotImpl) CommandController {
 	return &CommandControllerImpl{
 		game:     gameinstance,
 		commands: make(map[string]func(ctx context.Context, args ...string) error),
@@ -58,7 +58,7 @@ func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx cont
 }
 
 // Exported wrapper function that delegates to catbot.HandleCatCommand
-func WrapCatHandler(bot catbot.CatBot) func(ctx context.Context, args ...string) error {
+func WrapCatHandler(bot catbot.CatBotImpl) func(ctx context.Context, args ...string) error {
 	return func(ctx context.Context, args ...string) error {
 		player := context_manager.GetNickFromContext(ctx)
 		message := strings.Join(args, " ")

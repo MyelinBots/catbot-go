@@ -41,10 +41,10 @@ func StartBot() error {
 
 	conn := irc.Client(ircConfig)
 	cat := catbot.NewCatBot(conn, cfg.IRCConfig.Channels[0])
-	controller := commands.NewCommandController(*cat)
+	controller := commands.NewCommandController(cat)
 
-	controller.AddCommand("!pet", commands.WrapCatHandler(*cat))
-	controller.AddCommand("!love", commands.WrapCatHandler(*cat))
+	controller.AddCommand("!pet", commands.WrapCatHandler(cat))
+	controller.AddCommand("!love", commands.WrapCatHandler(cat))
 
 	// IRC Handlers
 	conn.HandleFunc(irc.CONNECTED, func(conn *irc.Conn, line *irc.Line) {
@@ -72,6 +72,7 @@ func StartBot() error {
 		started.Lock()
 		defer started.Unlock()
 		if line.Args[0] == cfg.IRCConfig.Channels[0] && !started.started {
+			go cat.Start(ctx)
 			started.started = true
 		}
 		handleNickserv(cfg.IRCConfig, identified, conn)
