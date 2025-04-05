@@ -2,15 +2,22 @@ package context_manager
 
 import (
 	"context"
-	"strings"
 )
 
-type Nick struct{}
+type contextKey string
 
+const nickKey contextKey = "nick"
+
+// SetNickContext stores the nickname into context
 func SetNickContext(ctx context.Context, nick string) context.Context {
-	return context.WithValue(ctx, Nick{}, strings.ToLower(nick))
+	return context.WithValue(ctx, nickKey, nick)
 }
 
-func GetNickContext(ctx context.Context) string {
-	return ctx.Value(Nick{}).(string)
+// GetNickFromContext retrieves the nickname from context
+func GetNickFromContext(ctx context.Context) string {
+	nick, ok := ctx.Value(nickKey).(string)
+	if !ok {
+		return "unknown"
+	}
+	return nick
 }

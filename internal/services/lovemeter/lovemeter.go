@@ -1,33 +1,33 @@
 package lovemeter
 
 type LoveMeter interface {
-	Increase(amount int)
-	Decrease(amount int)
-	Get() int
+	Increase(player string, amount int)
+	Decrease(player string, amount int)
+	Get(player string) int
 }
 
 type LoveMeterImpl struct {
-	Value int
+	Values map[string]int
 }
 
 func NewLoveMeter() LoveMeter {
-	return &LoveMeterImpl{Value: 50}
+	return &LoveMeterImpl{Values: make(map[string]int)}
 }
 
-func (lm *LoveMeterImpl) Increase(amount int) {
-	lm.Value += amount
-	if lm.Value > 100 {
-		lm.Value = 100
+func (lm *LoveMeterImpl) Increase(player string, amount int) {
+	lm.Values[player] += amount
+	if lm.Values[player] > 100 {
+		lm.Values[player] = 100
 	}
 }
 
-func (lm *LoveMeterImpl) Decrease(amount int) {
-	lm.Value -= amount
-	if lm.Value < 0 {
-		lm.Value = 0
+func (lm *LoveMeterImpl) Decrease(player string, amount int) {
+	lm.Values[player] -= amount
+	if lm.Values[player] < 0 {
+		lm.Values[player] = 0
 	}
 }
 
-func (lm *LoveMeterImpl) Get() int {
-	return lm.Value
+func (lm *LoveMeterImpl) Get(player string) int {
+	return lm.Values[player]
 }

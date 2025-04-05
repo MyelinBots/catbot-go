@@ -25,10 +25,9 @@ func (a Action) Respond(nick string, love int) string {
 	}
 	rand.Seed(time.Now().UnixNano())
 	reaction := emotes[rand.Intn(len(emotes))]
-	return fmt.Sprintf("purrito: %s at %s and your love meter increased to %d%%", reaction, nick, love)
+	return fmt.Sprintf("%s at %s and your love meter increased to %d%% ❤️", reaction, nick, love)
 }
 
-// NewCatActions creates a new CatActions instance
 func NewCatActions() *CatActions {
 	return &CatActions{
 		LoveMeter: 0,
@@ -39,7 +38,6 @@ func NewCatActions() *CatActions {
 	}
 }
 
-// ExecuteAction executes the given action
 func (ca *CatActions) ExecuteAction(actionName, nick, target string) string {
 	action, exists := ca.Actions[actionName]
 	if !exists {
@@ -54,7 +52,7 @@ func (ca *CatActions) ExecuteAction(actionName, nick, target string) string {
 	case "pet":
 		if ca.LoveMeter < 70 {
 			ca.LoveMeter += 10
-			return fmt.Sprintf("purrito looks at %s cautiously... but doesn't run away. (Love: %d%%)", nick, ca.LoveMeter)
+			return fmt.Sprintf("looks at %s cautiously... but doesn't run away. (Love: %d%%)", nick, ca.LoveMeter)
 		}
 		ca.LoveMeter += 10
 		if ca.LoveMeter > 100 {
@@ -67,36 +65,9 @@ func (ca *CatActions) ExecuteAction(actionName, nick, target string) string {
 		if ca.LoveMeter < 0 {
 			ca.LoveMeter = 0
 		}
-		return fmt.Sprintf("purrito hisses and hides from %s! (Love: %d%%)", nick, ca.LoveMeter)
+		return fmt.Sprintf("hisses and hides from %s! (Love: %d%%)", nick, ca.LoveMeter)
 
 	default:
 		return "purrito doesn't understand what you're doing."
-	}
-}
-
-// main simulation
-func main() {
-	cat := NewCatActions()
-
-	// Simulate commands
-	inputs := []string{
-		"!pet purrito",
-		"!pet purrito",
-		"!kick purrito",
-		"!pet purrito",
-	}
-
-	user := "Scientist"
-	for _, cmd := range inputs {
-		parts := strings.Fields(cmd)
-		if len(parts) < 2 {
-			fmt.Println("Usage: !pet purrito")
-			continue
-		}
-
-		action := strings.TrimPrefix(parts[0], "!")
-		target := parts[1]
-		response := cat.ExecuteAction(action, user, target)
-		fmt.Println(response)
 	}
 }

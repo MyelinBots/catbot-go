@@ -20,6 +20,7 @@ type CommandControllerImpl struct {
 	commands map[string]func(ctx context.Context, args ...string) error
 }
 
+// Constructor
 func NewCommandController(gameinstance catbot.CatBot) CommandController {
 	return &CommandControllerImpl{
 		game:     gameinstance,
@@ -27,6 +28,7 @@ func NewCommandController(gameinstance catbot.CatBot) CommandController {
 	}
 }
 
+// HandleCommand parses an IRC line and dispatches to the correct handler
 func (c *CommandControllerImpl) HandleCommand(ctx context.Context, line *irc.Line) error {
 	if len(line.Args) < 2 {
 		return nil
@@ -38,18 +40,29 @@ func (c *CommandControllerImpl) HandleCommand(ctx context.Context, line *irc.Lin
 		return nil
 	}
 
-	command := parts[0]
+	command := parts[0] // e.g., "!pet"
 	args := parts[1:]
 	fmt.Println("Handling command:", command)
 
 	if handler, exists := c.commands[command]; exists {
 		ctx = context_manager.SetNickContext(ctx, line.Nick)
-		return handler(ctx, args...)
+		return handler(ctx, append([]string{command}, args...)...)
 	}
 
 	return nil
 }
 
+// AddCommand registers a command handler
 func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx context.Context, args ...string) error) {
 	c.commands[command] = handler
+}
+
+// Exported wrapper function that delegates to catbot.HandleCatCommand
+func WrapCatHandler(bot catbot.CatBot) func(ctx context.Context, args ...string) error {
+	return func(ctx context.Context, args ...string) error {
+		player := context_manager.GetNickFromContext(ctx)
+		message := strings.Join(args, " ")
+		bot.HandleCatCommand(ctx, player, message)
+		return nil
+	}
 }
