@@ -10,6 +10,7 @@ import (
 	"github.com/MyelinBots/catbot-go/internal/healthcheck"
 	"github.com/MyelinBots/catbot-go/internal/services/catbot"
 	"github.com/MyelinBots/catbot-go/internal/services/commands"
+	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 	irc "github.com/fluffle/goirc/client"
 )
 
@@ -40,13 +41,14 @@ func StartBot() error {
 	ircConfig.Server = fmt.Sprintf("%s:%d", cfg.IRCConfig.Host, cfg.IRCConfig.Port)
 
 	conn := irc.Client(ircConfig)
+
 	cat := catbot.NewCatBot(conn, cfg.IRCConfig.Channels[0])
 	controller := commands.NewCommandController(cat)
 
 	controller.AddCommand("!pet", commands.WrapCatHandler(cat))
 	controller.AddCommand("!love", commands.WrapCatHandler(cat))
+	controller.AddCommand("!invite", commands.InviteHandler(conn))
 
-	// IRC Handlers
 	conn.HandleFunc(irc.CONNECTED, func(conn *irc.Conn, line *irc.Line) {
 		fmt.Printf("Connected to %s\n", cfg.IRCConfig.Host)
 		for _, channel := range cfg.IRCConfig.Channels {
@@ -72,7 +74,6 @@ func StartBot() error {
 		started.Lock()
 		defer started.Unlock()
 		if line.Args[0] == cfg.IRCConfig.Channels[0] && !started.started {
-			go cat.Start(ctx)
 			started.started = true
 		}
 		handleNickserv(cfg.IRCConfig, identified, conn)
@@ -84,13 +85,13 @@ func StartBot() error {
 	})
 
 	conn.HandleFunc(irc.PRIVMSG, func(conn *irc.Conn, line *irc.Line) {
-		if line.Args[1] == "!start" {
-			started.Lock()
-			if !started.started {
-				started.started = true
-			}
-			started.Unlock()
+		if line == nil || len(line.Args) < 2 {
+			return
 		}
+
+		ctx := context_manager.SetNickContext(context.Background(), line.Nick)
+		ctx = context_manager.SetLineContext(ctx, line)
+
 		err := controller.HandleCommand(ctx, line)
 		if err != nil {
 			fmt.Printf("Error handling command: %s\n", err.Error())
