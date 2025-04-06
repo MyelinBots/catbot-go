@@ -2,6 +2,7 @@ package catbot
 
 import (
 	"context"
+	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 	"math/rand"
 	"strings"
 	"time"
@@ -14,12 +15,6 @@ type IRCClient interface {
 	Privmsg(channel, message string)
 }
 
-type CatBotImpl interface {
-	HandleCatCommand(ctx context.Context, player string, message string) error
-	Start(ctx context.Context)
-	HandleRandomAction(ctx context.Context)
-}
-
 // CatBot handles cat actions and message responses
 type CatBot struct {
 	CatActions cat_actions.CatActionsImpl
@@ -29,7 +24,7 @@ type CatBot struct {
 }
 
 // NewCatBot initializes the CatBot instance
-func NewCatBot(client IRCClient, channel string) CatBotImpl {
+func NewCatBot(client IRCClient, channel string) *CatBot {
 	return &CatBot{
 		CatActions: cat_actions.NewCatActions(),
 		IrcClient:  client,
@@ -39,8 +34,10 @@ func NewCatBot(client IRCClient, channel string) CatBotImpl {
 }
 
 // HandleCatCommand processes commands like !pet purrito from users
-func (cb *CatBot) HandleCatCommand(ctx context.Context, player string, message string) error {
-	parts := strings.Fields(message)
+func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
+	nick := context_manager.GetNickContext(ctx)
+	// message
+	parts := strings.Split(args[0], " ")
 	if len(parts) < 2 {
 		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
 
@@ -50,7 +47,7 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, player string, message s
 	action := strings.TrimPrefix(parts[0], "!")
 	target := parts[1]
 
-	response := cb.CatActions.ExecuteAction(action, player, target)
+	response := cb.CatActions.ExecuteAction(action, nick, target)
 	cb.IrcClient.Privmsg(cb.Channel, response)
 
 	return nil
