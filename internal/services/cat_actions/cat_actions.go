@@ -30,6 +30,8 @@ var emotes = []string{
 	"rolls over for belly rubs",
 	"gives a soft chirp",
 	"licks its paw and looks",
+	"blinks slowly",
+	"purrs contentedly",
 }
 
 // NewCatActions returns a new instance of CatActions
@@ -62,9 +64,14 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 				"hisses and moves away",
 				"growls softly, not in the mood",
 				"glares coldly",
-				"swats your hand away",
 				"turns their back",
 				"gives disdainful look",
+				"flicks its tail in annoyance",
+				"lets out a displeased meow",
+				"stiffens and walks away",
+				"gives a sharp meow and walks off",
+				"scratches the ground and ignores you",
+				"gives a dismissive flick of the tail",
 			}
 			rejectMsg := rejects[rand.Intn(len(rejects))]
 			return fmt.Sprintf("purrito %s at %s and your love meter decreased to %d%% 😾 %s",
