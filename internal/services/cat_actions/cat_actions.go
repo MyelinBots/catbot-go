@@ -26,8 +26,13 @@ var emotes = []string{
 	"purrs warmly",
 	"nuzzles you gently",
 	"flicks its tail playfully",
+	"stretches and yawns",
+	"rolls over for belly rubs",
+	"gives a soft chirp",
+	"licks its paw and looks",
 }
 
+// NewCatActions returns a new instance of CatActions
 func NewCatActions() CatActionsImpl {
 	return &CatActions{
 		LoveMeter: lovemeter.NewLoveMeter(),
@@ -35,6 +40,7 @@ func NewCatActions() CatActionsImpl {
 	}
 }
 
+// ExecuteAction handles player actions toward purrito
 func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 	if strings.ToLower(target) != "purrito" {
 		return fmt.Sprintf("%s, you can only interact with purrito.", player)
@@ -42,31 +48,53 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 
 	switch actionName {
 	case "pet":
+		love := ca.LoveMeter.Get(player)
+
+		// Higher rejection chance if love is low
+		rejectChance := 5
+		if love < 20 {
+			rejectChance = 3
+		}
+
+		if rand.Intn(rejectChance) == 0 {
+			ca.LoveMeter.Decrease(player, 5)
+			rejects := []string{
+				"hisses and moves away",
+				"growls softly, not in the mood",
+				"glares coldly",
+				"swats your hand away",
+				"turns their back",
+				"gives disdainful look",
+			}
+			rejectMsg := rejects[rand.Intn(len(rejects))]
+			return fmt.Sprintf("purrito %s at %s and your love meter decreased to %d%% 😾 %s",
+				rejectMsg, player, ca.LoveMeter.Get(player), ca.LoveMeter.GetLoveBar(player))
+		}
+
+		// Accepted petting
 		ca.LoveMeter.Increase(player, 1)
 		return ca.reactionMessage(player)
-
-	case "kick":
-		ca.LoveMeter.Decrease(player, 15)
-		return fmt.Sprintf("purrito hisses and hides from %s! (Love: %d%%) %s", player, ca.LoveMeter.Get(player), ca.LoveMeter.GetLoveBar(player))
 
 	default:
 		return "purrito doesn't understand what you're doing."
 	}
 }
 
+// reactionMessage generates a happy response from purrito
 func (ca *CatActions) reactionMessage(player string) string {
 	rand.Seed(time.Now().UnixNano())
 	emote := emotes[rand.Intn(len(emotes))]
 	love := ca.LoveMeter.Get(player)
-	return fmt.Sprintf("%s at %s and your love meter is now %d%% 😽 %s", emote, player, love, ca.LoveMeter.GetLoveBar(player))
+	return fmt.Sprintf("%s at %s and your love meter is now %d%% 😽 %s",
+		emote, player, love, ca.LoveMeter.GetLoveBar(player))
 }
 
-// GetActions returns the list of actions
+// GetActions returns all available cat actions
 func (ca *CatActions) GetActions() []string {
 	return ca.Actions
 }
 
-// GetRandomAction returns a random action from RandomActions
+// GetRandomAction picks a random action from the list
 func (ca *CatActions) GetRandomAction() string {
 	rand.Seed(time.Now().UnixNano())
 	return ca.Actions[rand.Intn(len(ca.Actions))]

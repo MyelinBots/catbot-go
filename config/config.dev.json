@@ -3,9 +3,9 @@
         "host": "irc.myelinbots.com",
         "port": 6697,
         "ssl": true,
-        "nick": "purrito",
-        "channelsString": "#lobby",
-        "network": "Myelinbots"
+        "nick": "purrito1",
+        "channelsString": "#testing",
+        "network": "myelinbots"
 
         
     }

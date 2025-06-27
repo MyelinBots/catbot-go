@@ -32,8 +32,7 @@ func NewCatActions() *CatActions {
 	return &CatActions{
 		LoveMeter: 0,
 		Actions: map[string]Action{
-			"pet":  {Type: "pet", Response: "You pet the cat!"},
-			"kick": {Type: "kick", Response: "You kicked the cat!"},
+			"pet": {Type: "pet", Response: "You pet the cat!"},
 		},
 	}
 }

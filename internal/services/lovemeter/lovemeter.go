@@ -49,5 +49,22 @@ func (lm *LoveMeterImpl) generateLoveBar(percent int) string {
 	// Generate a love bar based on the percentage
 	// This is a placeholder implementation
 	// show percentage as a bar of hearts with a total of 10 hearts being 100%
-	return fmt.Sprintf("[%-20s]", strings.Repeat("❤️", percent/10))
+	hearts := percent / 10
+	return fmt.Sprintf("[%s%s]", strings.Repeat("❤️", hearts), strings.Repeat("░", 10-hearts))
+}
+
+func (lm *LoveMeterImpl) GetMood(player string) string {
+	love := lm.Get(player)
+	switch {
+	case love == 0:
+		return "😾 hostile"
+	case love < 20:
+		return "😿 sad"
+	case love < 50:
+		return "😐 cautious"
+	case love < 80:
+		return "😺 friendly"
+	default:
+		return "😻 loves you"
+	}
 }
