@@ -2,88 +2,59 @@ package catbot
 
 import (
 	"context"
+	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 	"math/rand"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/services/cat_actions"
-	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
 )
 
-type CatBot interface {
-	HandleCatCommand(ctx context.Context, args ...string) error
-	Start(ctx context.Context)
-	HandleRandomAction(ctx context.Context)
-}
-
+// IRCClient defines the interface for IRC client communication
 type IRCClient interface {
 	Privmsg(channel, message string)
 }
 
-type CatBotImpl struct {
-	LoveMeter  lovemeter.LoveMeter
-	CatActions *cat_actions.CatActions
-	times      []int
+// CatBot handles cat actions and message responses
+type CatBot struct {
+	CatActions cat_actions.CatActionsImpl
 	IrcClient  IRCClient
 	Channel    string
-	Network    string
+	times      []int
 }
 
-func NewCatBot(client IRCClient, network string, channel string) CatBot {
-	rand.Seed(time.Now().UnixNano())
-	loveMeter := lovemeter.NewLoveMeter()
-	return &CatBotImpl{
-		LoveMeter:  loveMeter,
-		CatActions: cat_actions.NewCatActions(loveMeter),
-		Channel:    channel,
-		Network:    network,
+// NewCatBot initializes the CatBot instance
+func NewCatBot(client IRCClient, channel string) *CatBot {
+	return &CatBot{
+		CatActions: cat_actions.NewCatActions(),
 		IrcClient:  client,
+		Channel:    channel,
 		times:      []int{5, 30, 60, 120, 300, 600, 900},
 	}
 }
 
-func (cb *CatBotImpl) HandleCatCommand(ctx context.Context, args ...string) error {
-	if len(args) == 0 {
-		cb.IrcClient.Privmsg(cb.Channel, "Meow? Try !pet purrito.")
+// HandleCatCommand processes commands like !pet purrito from users
+func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
+	nick := context_manager.GetNickContext(ctx)
+	// message
+	parts := strings.Split(args[0], " ")
+	if len(parts) < 2 {
+		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
+
 		return nil
 	}
 
-	command := strings.ToLower(args[0])
-	switch command {
-	case "!pet":
-		response := cb.CatActions.ExecuteAction("pet")
-		reaction := cb.GetRandomReaction()
-		fullMessage := response + " The cat " + reaction + "! (Love meter: " + cb.loveLevelString() + ")"
-		cb.IrcClient.Privmsg(cb.Channel, fullMessage)
-	case "!love":
-		love := cb.LoveMeter.Get()
-		cb.IrcClient.Privmsg(cb.Channel, cb.getLoveMessage(love))
-	default:
-		cb.IrcClient.Privmsg(cb.Channel, "purrito tilts its head. Unknown command. 🐱")
-	}
+	action := strings.TrimPrefix(parts[0], "!")
+	target := parts[1]
+
+	response := cb.CatActions.ExecuteAction(action, nick, target)
+	cb.IrcClient.Privmsg(cb.Channel, response)
 
 	return nil
 }
 
-func (cb *CatBotImpl) loveLevelString() string {
-	return strconv.Itoa(cb.LoveMeter.Get())
-}
-
-func (cb *CatBotImpl) getLoveMessage(love int) string {
-	switch {
-	case love >= 90:
-		return "purrito absolutely adores you! 💖"
-	case love >= 70:
-		return "purrito really likes you! 🐾"
-	case love >= 40:
-		return "purrito is curious and friendly. 🐱"
-	default:
-		return "purrito keeps a cautious distance... 😼"
-	}
-}
-
-func (cb *CatBotImpl) Start(ctx context.Context) {
+func (cb *CatBot) Start(ctx context.Context) {
+	// randomly select a time from the times slice
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,15 +67,7 @@ func (cb *CatBotImpl) Start(ctx context.Context) {
 	}
 }
 
-func (cb *CatBotImpl) HandleRandomAction(ctx context.Context) {
-	reaction := cb.GetRandomReaction()
-	cb.IrcClient.Privmsg(cb.Channel, reaction)
-}
-
-// You can optionally extract this from CatActions instead
-func (cb *CatBotImpl) GetRandomReaction() string {
-	reactions := []string{
-		"meows softly", "purrs", "rubs against your leg", "rolls over", "stares at you lovingly",
-	}
-	return reactions[rand.Intn(len(reactions))]
+func (cb *CatBot) HandleRandomAction(ctx context.Context) {
+	action := cb.CatActions.GetRandomAction()
+	cb.IrcClient.Privmsg(cb.Channel, action)
 }
