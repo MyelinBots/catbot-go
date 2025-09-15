@@ -1,8 +1,6 @@
 
-CREATE TABLE IF NOT EXISTS player (
-    id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+CREATE TABLE cat_player (
+    nickname VARCHAR(100) UNIQUE NOT NULL,
     lovemeter INT NOT NULL DEFAULT 0,
-    network VARCHAR(255) NOT NULL
-    channel VARCHAR(255) NOT NULL
+    PRIMARY KEY (nickname)
 );

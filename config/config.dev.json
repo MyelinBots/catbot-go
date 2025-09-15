@@ -3,10 +3,10 @@
         "host": "irc.myelinbots.com",
         "port": 6697,
         "ssl": true,
-        "nick": "purrito1",
+        "nick": "purrito",
         "channelsString": "#testing",
-        "network": "myelinbots"
-
-        
+        "network": "MyelinBots",
+        "nickservPassword": "purrito"
     }
 }
+

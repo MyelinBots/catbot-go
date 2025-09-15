@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
 )
 
@@ -16,8 +17,11 @@ type CatActionsImpl interface {
 }
 
 type CatActions struct {
-	LoveMeter lovemeter.LoveMeter
-	Actions   []string
+	LoveMeter     lovemeter.LoveMeter
+	Actions       []string
+	CatPlayerRepo cat_player.CatPlayerRepository
+	Network       string
+	Channel       string
 }
 
 var emotes = []string{
@@ -35,10 +39,13 @@ var emotes = []string{
 }
 
 // NewCatActions returns a new instance of CatActions
-func NewCatActions() CatActionsImpl {
+func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network string, channel string) CatActionsImpl {
 	return &CatActions{
-		LoveMeter: lovemeter.NewLoveMeter(),
-		Actions:   emotes,
+		LoveMeter:     lovemeter.NewLoveMeter(catPlayerRepo, network, channel),
+		Actions:       emotes,
+		CatPlayerRepo: catPlayerRepo,
+		Network:       network,
+		Channel:       channel,
 	}
 }
 

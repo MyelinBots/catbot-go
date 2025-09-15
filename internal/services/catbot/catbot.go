@@ -2,11 +2,13 @@ package catbot
 
 import (
 	"context"
-	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 	"math/rand"
 	"strings"
 	"time"
 
+	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
+
+	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 	"github.com/MyelinBots/catbot-go/internal/services/cat_actions"
 )
 
@@ -17,19 +19,23 @@ type IRCClient interface {
 
 // CatBot handles cat actions and message responses
 type CatBot struct {
-	CatActions cat_actions.CatActionsImpl
-	IrcClient  IRCClient
-	Channel    string
-	times      []int
+	CatActions    cat_actions.CatActionsImpl
+	IrcClient     IRCClient
+	Channel       string
+	Network       string
+	times         []int
+	CatPlayerRepo cat_player.CatPlayerRepository
 }
 
 // NewCatBot initializes the CatBot instance
-func NewCatBot(client IRCClient, channel string) *CatBot {
+func NewCatBot(client IRCClient, catPlayerRepo cat_player.CatPlayerRepository, network string, channel string) *CatBot {
 	return &CatBot{
-		CatActions: cat_actions.NewCatActions(),
-		IrcClient:  client,
-		Channel:    channel,
-		times:      []int{5, 30, 60, 120, 300, 600, 900},
+		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
+		IrcClient:     client,
+		Channel:       channel,
+		Network:       network,
+		times:         []int{5, 30, 60, 120, 300, 600, 900},
+		CatPlayerRepo: catPlayerRepo,
 	}
 }
 

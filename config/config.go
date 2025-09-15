@@ -23,16 +23,18 @@ type IRCConfig struct {
 	Port             int    `env:"PORT"`
 	SSL              bool   `env:"SSL"`
 	Nick             string `env:"NICK"`
+	User             string `env:"USER"`
 	ChannelsString   string `env:"CHANNELS"`
 	Channels         []string
 	Network          string `env:"NETWORK"`
 	NickservCommand  string `env:"NICKSERV_COMMAND" default:"PRIVMSG NickServ IDENTIFY %s"`
 	NickservPassword string `env:"NICKSERV_PASSWORD" default:""`
+	Password         string `env:"PASSWORD" default:""`
 }
 
 type DBConfig struct {
 	Host     string `default:"localhost" env:"DBHOST"`
-	DataBase string `default:"purrito" env:"DBNAME"`
+	DataBase string `default:"catbot" env:"DBNAME"`
 	User     string `default:"postgres" env:"DBUSERNAME"`
 	Password string `required:"true" env:"DBPASSWORD" default:"mysecretpassword"`
 	Port     uint   `default:"5432" env:"DBPORT"`

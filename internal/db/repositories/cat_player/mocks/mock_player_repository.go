@@ -42,10 +42,10 @@ func (m *MockPlayerRepository) EXPECT() *MockPlayerRepositoryMockRecorder {
 }
 
 // GetAllPlayers mocks base method.
-func (m *MockPlayerRepository) GetAllPlayers(ctx context.Context) ([]*player.Player, error) {
+func (m *MockPlayerRepository) GetAllPlayers(ctx context.Context) ([]*player.CatPlayer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAllPlayers", ctx)
-	ret0, _ := ret[0].([]*player.Player)
+	ret0, _ := ret[0].([]*player.CatPlayer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -57,10 +57,10 @@ func (mr *MockPlayerRepositoryMockRecorder) GetAllPlayers(ctx any) *gomock.Call 
 }
 
 // GetPlayerByID mocks base method.
-func (m *MockPlayerRepository) GetPlayerByID(id string) (*player.Player, error) {
+func (m *MockPlayerRepository) GetPlayerByID(id string) (*player.CatPlayer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPlayerByID", id)
-	ret0, _ := ret[0].(*player.Player)
+	ret0, _ := ret[0].(*player.CatPlayer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -72,7 +72,7 @@ func (mr *MockPlayerRepositoryMockRecorder) GetPlayerByID(id any) *gomock.Call {
 }
 
 // UpsertPlayer mocks base method.
-func (m *MockPlayerRepository) UpsertPlayer(ctx context.Context, player *player.Player) error {
+func (m *MockPlayerRepository) UpsertPlayer(ctx context.Context, player *player.CatPlayer) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertPlayer", ctx, player)
 	ret0, _ := ret[0].(error)
