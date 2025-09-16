@@ -1,3 +1,4 @@
+// internal/user/model.go
 package user
 
 import "gorm.io/gorm"

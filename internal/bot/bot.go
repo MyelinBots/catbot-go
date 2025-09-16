@@ -37,12 +37,24 @@ func StartBot() error {
 	fmt.Printf("Starting bot with config: %+v\n", cfg)
 	healthcheck.StartHealthcheck(ctx, cfg.AppConfig)
 
+	// ---- IRC config (with PASS) ----
 	ircConfig := irc.NewConfig(cfg.IRCConfig.Nick)
 	ircConfig.SSL = cfg.IRCConfig.SSL
 	ircConfig.SSLConfig = &tls.Config{InsecureSkipVerify: true}
 	ircConfig.Server = fmt.Sprintf("%s:%d", cfg.IRCConfig.Host, cfg.IRCConfig.Port)
+	ircConfig.Me.Ident = cfg.IRCConfig.User
+	ircConfig.Pass = cfg.IRCConfig.Password // send PASS to bouncer
 
 	conn := irc.Client(ircConfig)
+
+	// ---- DB: open ONCE and migrate ----
+	database := db.NewDatabase(cfg.DBConfig)
+	if database == nil || database.DB == nil {
+		return fmt.Errorf("db init failed")
+	}
+	if err := database.DB.AutoMigrate(&cat_player.CatPlayer{}); err != nil {
+		return fmt.Errorf("migrate cat_player failed: %w", err)
+	}
 
 	gameInstances := &GameInstances{
 		games:            make(map[string]*catbot.CatBot),
@@ -50,14 +62,8 @@ func StartBot() error {
 		GameStarted:      make(map[string]bool),
 	}
 
-	// helper to init a channel's game+commands in one place
+	// helper to init a channel's game+commands in one place (REUSE 'database')
 	initChannel := func(channel string) error {
-		// If you want a shared DB across channels, hoist this out of the func.
-		database := db.NewDatabase(cfg.DBConfig)
-		if database == nil || database.DB == nil {
-			return fmt.Errorf("db init failed for channel %s", channel)
-		}
-
 		catPlayerRepository := cat_player.NewPlayerRepository(database)
 		game := catbot.NewCatBot(conn, catPlayerRepository, cfg.IRCConfig.Network, channel)
 		cmds := commands.NewCommandController(game)
@@ -65,6 +71,8 @@ func StartBot() error {
 		cmds.AddCommand("!pet", game.HandleCatCommand)
 		cmds.AddCommand("!love", game.HandleCatCommand)
 		cmds.AddCommand("!invite", commands.InviteHandler(conn))
+		cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove5Handler())
+		cmds.AddCommand("!purrito", cmds.(*commands.CommandControllerImpl).PurritoHandler())
 
 		gameInstances.games[channel] = game
 		gameInstances.commandInstances[channel] = cmds
@@ -91,7 +99,7 @@ func StartBot() error {
 		}
 	})
 
-	// Also join on MOTD end / no MOTD (common IRC codes)
+	// Also join on MOTD end / no MOTD
 	conn.HandleFunc("422", func(c *irc.Conn, _ *irc.Line) {
 		for _, ch := range cfg.IRCConfig.Channels {
 			c.Join(ch)
@@ -108,27 +116,24 @@ func StartBot() error {
 		channel := line.Args[0]
 		fmt.Printf("Joined %s\n", channel)
 
-		// Identify with NickServ after we join somewhere
 		handleNickserv(cfg.IRCConfig, identified, c)
 
 		gameInstances.Lock()
 		defer gameInstances.Unlock()
 
-		// ensure the channel is initialized (covers invites or missing preload)
 		if _, ok := gameInstances.games[channel]; !ok {
 			if err := initChannel(channel); err != nil {
 				fmt.Printf("Error init channel %s: %v\n", channel, err)
 				return
 			}
 		}
-
 		if !gameInstances.GameStarted[channel] {
-			go gameInstances.games[channel].Start(ctx) // non-blocking
+			go gameInstances.games[channel].Start(ctx)
 			gameInstances.GameStarted[channel] = true
 		}
 	})
 
-	// INVITE: join and init the per-channel game/commands, then start
+	// INVITE handler
 	conn.HandleFunc(irc.INVITE, func(c *irc.Conn, line *irc.Line) {
 		channel := line.Args[1]
 		fmt.Printf("Invited to %s\n", channel)
@@ -141,7 +146,6 @@ func StartBot() error {
 			fmt.Printf("Error init invited channel %s: %v\n", channel, err)
 			return
 		}
-
 		go gameInstances.games[channel].Start(ctx)
 		gameInstances.GameStarted[channel] = true
 	})
@@ -151,11 +155,9 @@ func StartBot() error {
 		channel := line.Args[0]
 		msg := line.Args[1]
 
-		// explicit manual start
 		if msg == "!start" {
 			gameInstances.Lock()
 			defer gameInstances.Unlock()
-
 			game, ok := gameInstances.games[channel]
 			if !ok {
 				if err := initChannel(channel); err != nil {
@@ -169,17 +171,15 @@ func StartBot() error {
 				return
 			}
 			fmt.Printf("Starting gameInstance for %s\n", channel)
-			go game.Start(ctx) // non-blocking
+			go game.Start(ctx)
 			gameInstances.GameStarted[channel] = true
 			return
 		}
 
-		// Route to the channel's command controller
 		gameInstances.Lock()
 		cmds, ok := gameInstances.commandInstances[channel]
 		gameInstances.Unlock()
 		if !ok {
-			// Lazy-init if needed
 			gameInstances.Lock()
 			if err := initChannel(channel); err != nil {
 				gameInstances.Unlock()
@@ -197,15 +197,12 @@ func StartBot() error {
 	})
 
 	quit := make(chan bool, 1)
-	conn.HandleFunc(irc.DISCONNECTED, func(_ *irc.Conn, _ *irc.Line) {
-		quit <- true
-	})
+	conn.HandleFunc(irc.DISCONNECTED, func(_ *irc.Conn, _ *irc.Line) { quit <- true })
 
 	if err := conn.Connect(); err != nil {
 		fmt.Printf("Connection error: %s\n", err.Error())
 		return err
 	}
-
 	<-quit
 	return nil
 }
@@ -214,7 +211,8 @@ func handleNickserv(cfg config.IRCConfig, identified *Identified, c *irc.Conn) {
 	identified.Lock()
 	defer identified.Unlock()
 	if !identified.identified && cfg.NickservPassword != "" {
-		command := fmt.Sprintf(cfg.NickservCommand, cfg.NickservPassword)
+		// Must include ':' before IDENTIFY param
+		command := fmt.Sprintf("PRIVMSG NickServ :IDENTIFY %s", cfg.NickservPassword)
 		c.Raw(command)
 		identified.identified = true
 	}

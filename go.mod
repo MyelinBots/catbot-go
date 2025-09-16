@@ -5,7 +5,6 @@ go 1.23.3
 require (
 	github.com/fluffle/goirc v1.3.1
 	github.com/golang-migrate/migrate/v4 v4.18.2
-	github.com/google/uuid v1.6.0
 	github.com/jinzhu/configor v1.2.2
 	github.com/spf13/cobra v1.8.1
 	go.uber.org/mock v0.5.0

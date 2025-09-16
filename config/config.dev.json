@@ -1,12 +1,17 @@
 {
     "ircconfig": {
-        "host": "irc.myelinbots.com",
-        "port": 6697,
+        "host": "bouncers.darkworld.network",
+        "port": 31337,
         "ssl": true,
         "nick": "purrito",
         "channelsString": "#testing",
-        "network": "MyelinBots",
-        "nickservPassword": "purrito"
+        "network": "darkworld",
+        "nickservPassword": "iamthebest555",
+        "password": "purrito/darkworld:FD8vufTTeR4TXjM"
+    },
+    "dbconfig": {
+        "host": "localhost",
+        "port": 5433
     }
 }
 

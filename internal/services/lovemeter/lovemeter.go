@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 )
@@ -13,84 +14,120 @@ type LoveMeter interface {
 	Decrease(player string, amount int)
 	Get(player string) int
 	GetLoveBar(player string) string
+	GetMood(player string) string
+	// Convenience: "42% 😺 friendly [❤️❤️❤️❤️░░░░░░]"
+	StatusLine(player string) string
 }
 
 type LoveMeterImpl struct {
-	Values        map[string]int
-	CatPlayerRepo cat_player.CatPlayerRepository
+	mu            sync.RWMutex
+	values        map[string]int
+	catPlayerRepo cat_player.CatPlayerRepository
 	Network       string
 	Channel       string
 }
 
-func NewLoveMeter(catPlayerRepo cat_player.CatPlayerRepository, network string, channel string) LoveMeter {
+func NewLoveMeter(catPlayerRepo cat_player.CatPlayerRepository, network, channel string) LoveMeter {
 	return &LoveMeterImpl{
-		Values:        make(map[string]int),
-		CatPlayerRepo: catPlayerRepo,
+		values:        make(map[string]int),
+		catPlayerRepo: catPlayerRepo,
 		Network:       network,
 		Channel:       channel,
 	}
 }
 
+// normalize nicknames so DB + cache are consistent
+func norm(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 func (lm *LoveMeterImpl) Increase(player string, amount int) {
-	lm.Values[player] += amount
-	if lm.Values[player] > 100 {
-		lm.Values[player] = 100
+	key := norm(player)
+
+	// ensure we start from DB value if not cached
+	current := lm.Get(key)
+	newVal := current + amount
+	if newVal > 100 {
+		newVal = 100
 	}
-	// Update the player's love meter in the database
-	if err := lm.CatPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
-		Name:      player,
-		LoveMeter: lm.Values[player],
+
+	lm.mu.Lock()
+	lm.values[key] = newVal
+	lm.mu.Unlock()
+
+	// persist
+	if err := lm.catPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
+		Name:      key,
+		LoveMeter: newVal,
 		Network:   lm.Network,
 		Channel:   lm.Channel,
 	}); err != nil {
-		fmt.Printf("Error updating love meter for player %s: %v\n", player, err)
+		fmt.Printf("Error updating love meter for %s: %v\n", key, err)
 	}
 }
 
 func (lm *LoveMeterImpl) Decrease(player string, amount int) {
-	lm.Values[player] -= amount
-	if lm.Values[player] < 0 {
-		lm.Values[player] = 0
+	key := norm(player)
+
+	current := lm.Get(key)
+	newVal := current - amount
+	if newVal < 0 {
+		newVal = 0
 	}
-	// Update the player's love meter in the database
-	if err := lm.CatPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
-		Name:      player,
-		LoveMeter: lm.Values[player],
+
+	lm.mu.Lock()
+	lm.values[key] = newVal
+	lm.mu.Unlock()
+
+	if err := lm.catPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
+		Name:      key,
+		LoveMeter: newVal,
 		Network:   lm.Network,
 		Channel:   lm.Channel,
 	}); err != nil {
-		fmt.Printf("Error updating love meter for player %s: %v\n", player, err)
+		fmt.Printf("Error updating love meter for %s: %v\n", key, err)
 	}
 }
 
 func (lm *LoveMeterImpl) Get(player string) int {
-	// get from db
-	fPlayer, err := lm.CatPlayerRepo.GetPlayerByName(player, lm.Network, lm.Channel)
-	if err != nil {
-		fmt.Printf("Error getting player %s: %v\n", player, err)
+	key := norm(player)
+
+	// cache
+	lm.mu.RLock()
+	if v, ok := lm.values[key]; ok {
+		lm.mu.RUnlock()
+		return v
+	}
+	lm.mu.RUnlock()
+
+	// miss → DB
+	fp, err := lm.catPlayerRepo.GetPlayerByName(key, lm.Network, lm.Channel)
+	if err != nil || fp == nil {
+		lm.mu.Lock()
+		lm.values[key] = 0
+		lm.mu.Unlock()
 		return 0
 	}
-	if fPlayer == nil {
-		// Player not found, initialize with 0 love
-		lm.Values[fPlayer.Name] = 0
-		return 0
-	} else {
-		// Player found, return their love meter value
-		lm.Values[fPlayer.Name] = fPlayer.LoveMeter
-		return fPlayer.LoveMeter
-	}
+
+	lm.mu.Lock()
+	lm.values[key] = fp.LoveMeter
+	lm.mu.Unlock()
+	return fp.LoveMeter
 }
 
 func (lm *LoveMeterImpl) GetLoveBar(player string) string {
 	love := lm.Get(player)
-	return fmt.Sprintf("%s", lm.generateLoveBar(love))
+	return lm.generateLoveBar(love)
 }
 
 func (lm *LoveMeterImpl) generateLoveBar(percent int) string {
-	// Generate a love bar based on the percentage
-	// This is a placeholder implementation
-	// show percentage as a bar of hearts with a total of 10 hearts being 100%
-	hearts := percent / 10
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	hearts := percent / 10 // 0..10
 	return fmt.Sprintf("[%s%s]", strings.Repeat("❤️", hearts), strings.Repeat("░", 10-hearts))
 }
 
@@ -108,4 +145,11 @@ func (lm *LoveMeterImpl) GetMood(player string) string {
 	default:
 		return "😻 loves you"
 	}
+}
+
+// StatusLine returns a compact, ready-to-print string like:
+// "42% 😺 friendly [❤️❤️❤️❤️░░░░░░]"
+func (lm *LoveMeterImpl) StatusLine(player string) string {
+	love := lm.Get(player)
+	return fmt.Sprintf("%d%% %s %s", love, lm.GetMood(player), lm.GetLoveBar(player))
 }
