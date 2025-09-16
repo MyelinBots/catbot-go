@@ -13,7 +13,6 @@ Every user has a personal love meter ranging from 0% to 100%. This meter reflect
 
 ### Commands
 - `!pet purrito` – Pet Purrito and build your bond  
-- `!love purrito` – Check your current love level with Purrito  
 
 That’s it! How Purrito responds depends on your love level. No two reactions are exactly the same 🐱
 
