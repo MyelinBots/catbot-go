@@ -128,8 +128,8 @@ func StartBot() error {
 			}
 		}
 		if !gameInstances.GameStarted[channel] {
-			go gameInstances.games[channel].Start(ctx)
 			gameInstances.GameStarted[channel] = true
+			go gameInstances.games[channel].Start(ctx)
 		}
 	})
 

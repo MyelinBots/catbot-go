@@ -135,15 +135,15 @@ func (lm *LoveMeterImpl) GetMood(player string) string {
 	love := lm.Get(player)
 	switch {
 	case love == 0:
-		return "😾 hostile"
+		return "hostile 😾"
 	case love < 20:
-		return "😿 sad"
+		return "sad 😿"
 	case love < 50:
-		return "😐 cautious"
+		return "cautious 😼"
 	case love < 80:
-		return "😺 friendly"
+		return "friendly 😺"
 	default:
-		return "😻 loves you"
+		return "loves you 😻"
 	}
 }
 

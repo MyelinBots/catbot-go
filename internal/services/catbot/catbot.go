@@ -2,14 +2,19 @@ package catbot
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 	"github.com/MyelinBots/catbot-go/internal/services/cat_actions"
 	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 )
+
+// Seed RNG once for this package
+func init() { rand.Seed(time.Now().UnixNano()) }
 
 // IRCClient defines the interface for IRC client communication
 type IRCClient interface {
@@ -24,6 +29,9 @@ type CatBot struct {
 	Network       string
 	times         []int
 	CatPlayerRepo cat_player.CatPlayerRepository
+
+	mu           sync.RWMutex
+	presentUntil time.Time // Purrito is "present" until this time
 }
 
 // NewCatBot initializes the CatBot instance
@@ -33,9 +41,25 @@ func NewCatBot(client IRCClient, catPlayerRepo cat_player.CatPlayerRepository, n
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{5, 30, 60, 120, 300, 600, 900},
+		times:         []int{5, 30, 60, 120, 300, 600, 900}, // 5s .. 15m
 		CatPlayerRepo: catPlayerRepo,
 	}
+}
+
+func (cb *CatBot) setPresentWindow(d time.Duration) {
+	cb.mu.Lock()
+	cb.presentUntil = time.Now().Add(d)
+	cb.mu.Unlock()
+}
+
+func (cb *CatBot) consumePresence() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if time.Now().Before(cb.presentUntil) {
+		cb.presentUntil = time.Now() // consume presence
+		return true
+	}
+	return false
 }
 
 // HandleCatCommand processes commands like "!pet purrito" from users
@@ -46,7 +70,6 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
 		return nil
 	}
-
 	parts := strings.Fields(args[0])
 	if len(parts) < 2 {
 		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
@@ -55,6 +78,14 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 
 	action := strings.TrimPrefix(parts[0], "!")
 	target := parts[1]
+
+	// Gate petting/love to presence window (one-shot)
+	if (action == "pet" || action == "love") && strings.EqualFold(target, "purrito") {
+		if !cb.consumePresence() {
+			cb.IrcClient.Privmsg(cb.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
+			return nil
+		}
+	}
 
 	response := cb.CatActions.ExecuteAction(action, nick, target)
 	cb.IrcClient.Privmsg(cb.Channel, response)
@@ -67,14 +98,16 @@ func (cb *CatBot) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			cb.HandleRandomAction(ctx)
+			cb.HandleRandomAction()
 			randomTime := cb.times[rand.Intn(len(cb.times))]
 			time.Sleep(time.Duration(randomTime) * time.Second)
 		}
 	}
 }
 
-func (cb *CatBot) HandleRandomAction(_ context.Context) {
+// HandleRandomAction makes Purrito appear and sets presence window (5 minutes)
+func (cb *CatBot) HandleRandomAction() {
 	action := cb.CatActions.GetRandomAction()
-	cb.IrcClient.Privmsg(cb.Channel, action)
+	cb.IrcClient.Privmsg(cb.Channel, fmt.Sprintf("🐈 meowww ... %s", action))
+	cb.setPresentWindow(5 * time.Minute) // interactable for 5 minutes after appearing
 }
