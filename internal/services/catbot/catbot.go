@@ -41,7 +41,7 @@ func NewCatBot(client IRCClient, catPlayerRepo cat_player.CatPlayerRepository, n
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{5, 30, 60, 120, 300, 600, 900}, // 5s .. 15m
+		times:         []int{1800}, // 30m
 		CatPlayerRepo: catPlayerRepo,
 	}
 }
