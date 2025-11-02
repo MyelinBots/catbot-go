@@ -1,9 +1,9 @@
 {
     "ircconfig": {
-        "host": "bouncers.darkworld.network",
-        "port": 31337,
+        "host": "us.darkworld.network",
+        "port": 6697,
         "ssl": true,
-        "nick": "purrito",
+        "nick": "testbot",
         "channelsString": "#testing",
         "network": "darkworld",
         "nickservPassword": "iamthebest555",
@@ -11,7 +11,8 @@
     },
     "dbconfig": {
         "host": "localhost",
-        "port": 5433
+        "port": 5433  
     }
 }
+
 

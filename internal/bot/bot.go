@@ -73,6 +73,7 @@ func StartBot() error {
 		cmds.AddCommand("!invite", commands.InviteHandler(conn))
 		cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove5Handler())
 		cmds.AddCommand("!purrito", cmds.(*commands.CommandControllerImpl).PurritoHandler())
+		cmds.AddCommand("!laser", cmds.(*commands.CommandControllerImpl).PurritoLaserHandler())
 
 		gameInstances.games[channel] = game
 		gameInstances.commandInstances[channel] = cmds

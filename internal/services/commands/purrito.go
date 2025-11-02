@@ -16,6 +16,7 @@ func (c *CommandControllerImpl) PurritoHandler() func(ctx context.Context, args 
 			" • !pet purrito — Pet me, maybe I will purr... or scratch! 🐾",
 			" • !toplove — See who I love the most 💖",
 			" • !purrito — Show this help/introduction",
+			" • !laser — Find out when I was last seen chasing lasers 🔦⚡️",
 		}
 
 		for _, l := range lines {
