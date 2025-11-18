@@ -134,8 +134,8 @@ func (cb *CatBot) HandleRandomAction() {
 
 	cb.mu.Lock()
 	cb.lastAppear = now
-	cb.nextAppear = now.Add(30 * time.Minute)  // cadence
-	cb.presentUntil = now.Add(5 * time.Minute) // interactable 5m
+	cb.nextAppear = now.Add(30 * time.Minute)   // cadence
+	cb.presentUntil = now.Add(10 * time.Minute) // interactable 10m
 	cb.appearedAt = now
 	cb.interacted = false
 	cb.mu.Unlock()
