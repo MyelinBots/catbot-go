@@ -53,7 +53,8 @@ func (cb *CatBot) consumePresence() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	if time.Now().Before(cb.presentUntil) {
-		cb.presentUntil = time.Now() // consume
+		// mark as interacted
+		cb.presentUntil = time.Now()
 		return true
 	}
 	return false
@@ -93,19 +94,30 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 		return nil
 	}
 
-	action := strings.TrimPrefix(parts[0], "!")
+	rawAction := strings.TrimPrefix(parts[0], "!")
+	action := strings.ToLower(rawAction)
 	target := parts[1]
 
-	// Gate petting/love to presence window (one-shot)
-	if (action == "pet" || action == "love") && strings.EqualFold(target, "purrito") {
+	// commands that require Purrito to be present
+	needsPurritoPresent := map[string]bool{
+		"pet":    true,
+		"love":   true,
+		"feed":   true,
+		"catnip": true,
+	}
+
+	// If the command requires Purrito to be present and the target is purrito
+	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
 		if !cb.consumePresence() {
+			// Someone else already interacted or the 10-minute window has passed
 			cb.IrcClient.Privmsg(cb.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
 			return nil
 		}
-		// successful gated interaction → count as interaction during this appearance
+		// This user is the one who "made it" in this round → count as successful interaction
 		cb.MarkInteracted()
 	}
 
+	// Forward to CatActions to generate the response message
 	response := cb.CatActions.ExecuteAction(action, nick, target)
 	cb.IrcClient.Privmsg(cb.Channel, response)
 	return nil

@@ -9,9 +9,10 @@
         "nickservPassword": "iamthebest555",
         "password": "purrito/darkworld:FD8vufTTeR4TXjM"
     },
+    
     "dbconfig": {
-        "host": "localhost",
-        "port": 5433  
+    "host": "localhost",
+    "port": 5433
     }
 }
 

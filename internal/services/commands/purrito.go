@@ -13,10 +13,15 @@ func (c *CommandControllerImpl) PurritoHandler() func(ctx context.Context, args 
 		lines := []string{
 			"🐱 Hi " + nick + "! I am Purrito — your friendly IRC cat on the DarkWorld Network.",
 			"You can interact with me using commands:",
-			" • !pet purrito — Pet me, maybe I will purr... or scratch! 🐾",
-			" • !toplove — See who I love the most 💖",
-			" • !purrito — Show this help/introduction",
-			" • !laser — Find out when I was last seen chasing lasers 🔦⚡️",
+			" * !pet purrito :::: Pet me, maybe I will purr... or scratch! 🐾",
+			" * !love purrito :::: Show me some love! 💗",
+			" * !feed purrito :::: Feed me some tasty treats 🍣 🍗 🍤 🍉",
+			" * !slap purrito :::: Give me a playful slap 👋😼",
+			" * !catnip purrito :::: Give me some catnip to boost my mood 🌿😸",
+			" * !laser :::: Find out when I was last seen chasing lasers 🔦⚡️",
+			" * !status purrito :::: Check how much I love you ❤️😽",
+			" * !purrito :::: Show this help/introduction 🐱",
+			" * !toplove :::: See who I love the most 💖",
 		}
 
 		for _, l := range lines {
