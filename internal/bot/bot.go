@@ -70,6 +70,10 @@ func StartBot() error {
 
 		cmds.AddCommand("!pet", game.HandleCatCommand)
 		cmds.AddCommand("!love", game.HandleCatCommand)
+		cmds.AddCommand("!slap", game.HandleCatCommand)
+		cmds.AddCommand("!feed", game.HandleCatCommand)
+		cmds.AddCommand("!status", game.HandleCatCommand)
+		cmds.AddCommand("!catnip", game.HandleCatCommand)
 		cmds.AddCommand("!invite", commands.InviteHandler(conn))
 		cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove5Handler())
 		cmds.AddCommand("!purrito", cmds.(*commands.CommandControllerImpl).PurritoHandler())
