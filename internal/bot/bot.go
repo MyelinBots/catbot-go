@@ -27,6 +27,15 @@ type GameInstances struct {
 	commandInstances map[string]commands.CommandController
 }
 
+// adaptVarArgs converts: func(ctx, ...string) -> func(ctx, message string)
+// เพราะ CommandController.AddCommand รับ handler แบบ func(ctx, message string) error
+func adaptVarArgs(h func(context.Context, ...string) error) func(context.Context, string) error {
+	return func(ctx context.Context, message string) error {
+		// ส่ง message เป็น arg ตัวเดียว (args[0]) ให้ handler ไป parse ต่อเอง
+		return h(ctx, message)
+	}
+}
+
 func StartBot() error {
 	cfg := config.LoadConfigOrPanic()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -43,7 +52,7 @@ func StartBot() error {
 	ircConfig.SSLConfig = &tls.Config{InsecureSkipVerify: true}
 	ircConfig.Server = fmt.Sprintf("%s:%d", cfg.IRCConfig.Host, cfg.IRCConfig.Port)
 	ircConfig.Me.Ident = cfg.IRCConfig.User
-	ircConfig.Pass = cfg.IRCConfig.Password // send PASS to bouncer
+	ircConfig.Pass = cfg.IRCConfig.Password
 
 	conn := irc.Client(ircConfig)
 
@@ -62,22 +71,30 @@ func StartBot() error {
 		GameStarted:      make(map[string]bool),
 	}
 
-	// helper to init a channel's game+commands in one place (REUSE 'database')
+	// helper: init a channel's game+commands in one place (reuse database)
 	initChannel := func(channel string) error {
-		catPlayerRepository := cat_player.NewPlayerRepository(database)
-		game := catbot.NewCatBot(conn, catPlayerRepository, cfg.IRCConfig.Network, channel)
-		cmds := commands.NewCommandController(game)
+		repo := cat_player.NewPlayerRepository(database)
+		game := catbot.NewCatBot(conn, repo, cfg.IRCConfig.Network, channel)
 
-		cmds.AddCommand("!pet", game.HandleCatCommand)
-		cmds.AddCommand("!love", game.HandleCatCommand)
-		cmds.AddCommand("!slap", game.HandleCatCommand)
-		cmds.AddCommand("!feed", game.HandleCatCommand)
-		cmds.AddCommand("!status", game.HandleCatCommand)
-		cmds.AddCommand("!catnip", game.HandleCatCommand)
-		cmds.AddCommand("!invite", commands.InviteHandler(conn))
-		cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove5Handler())
-		cmds.AddCommand("!purrito", cmds.(*commands.CommandControllerImpl).PurritoHandler())
-		cmds.AddCommand("!laser", cmds.(*commands.CommandControllerImpl).PurritoLaserHandler())
+		// cast once เพื่อเรียก handler methods ได้ตรงๆ
+		cmds := commands.NewCommandController(game).(*commands.CommandControllerImpl)
+
+		// basic purrito commands -> game.HandleCatCommand (varargs) ต้อง adapt
+		cmds.AddCommand("!pet", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!love", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!slap", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!feed", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!status", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!catnip", adaptVarArgs(game.HandleCatCommand))
+
+		// extra commands
+		// InviteHandler เป็น varargs -> adapt
+		cmds.AddCommand("!invite", adaptVarArgs(commands.InviteHandler(conn)))
+
+		// 3 อันนี้ signature เป็น (ctx, message string) อยู่แล้ว -> ไม่ต้อง adapt
+		cmds.AddCommand("!toplove", adaptVarArgs(cmds.TopLove5Handler()))
+		cmds.AddCommand("!purrito", adaptVarArgs(cmds.PurritoHandler()))
+		cmds.AddCommand("!laser", cmds.PurritoLaserHandler())
 
 		gameInstances.games[channel] = game
 		gameInstances.commandInstances[channel] = cmds
@@ -160,9 +177,11 @@ func StartBot() error {
 		channel := line.Args[0]
 		msg := line.Args[1]
 
+		// manual start (optional)
 		if msg == "!start" {
 			gameInstances.Lock()
 			defer gameInstances.Unlock()
+
 			game, ok := gameInstances.games[channel]
 			if !ok {
 				if err := initChannel(channel); err != nil {
@@ -171,19 +190,23 @@ func StartBot() error {
 				}
 				game = gameInstances.games[channel]
 			}
+
 			if gameInstances.GameStarted[channel] {
 				fmt.Printf("Game already started for %s\n", channel)
 				return
 			}
+
 			fmt.Printf("Starting gameInstance for %s\n", channel)
 			go game.Start(ctx)
 			gameInstances.GameStarted[channel] = true
 			return
 		}
 
+		// get cmds for this channel
 		gameInstances.Lock()
 		cmds, ok := gameInstances.commandInstances[channel]
 		gameInstances.Unlock()
+
 		if !ok {
 			gameInstances.Lock()
 			if err := initChannel(channel); err != nil {
@@ -215,8 +238,8 @@ func StartBot() error {
 func handleNickserv(cfg config.IRCConfig, identified *Identified, c *irc.Conn) {
 	identified.Lock()
 	defer identified.Unlock()
+
 	if !identified.identified && cfg.NickservPassword != "" {
-		// Must include ':' before IDENTIFY param
 		command := fmt.Sprintf("PRIVMSG NickServ :IDENTIFY %s", cfg.NickservPassword)
 		c.Raw(command)
 		identified.identified = true

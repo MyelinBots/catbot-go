@@ -26,7 +26,8 @@ type CatActions struct {
 	Network       string
 	Channel       string
 
-	slapWarned map[string]bool // track who already got a slap warning
+	slapWarned   map[string]bool // track who already got a slap warning
+	catnipUsedAt map[string]time.Time
 }
 
 var emotes = []string{
@@ -87,7 +88,18 @@ func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channe
 		Network:       network,
 		Channel:       channel,
 		slapWarned:    make(map[string]bool),
+		catnipUsedAt:  make(map[string]time.Time),
 	}
+}
+
+func sameDayNY(a, b time.Time) bool {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.Local
+	}
+	aa := a.In(loc)
+	bb := b.In(loc)
+	return aa.Year() == bb.Year() && aa.YearDay() == bb.YearDay()
 }
 
 // ExecuteAction handles player actions toward purrito
@@ -147,11 +159,11 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		bar := ca.LoveMeter.GetLoveBar(player)
 
 		secondPunishments := []string{
-			fmt.Sprintf("💢 Purrito swats back at %s and looks hurt. your love meter decreased to %d%% with status :: %s %s", player, love, mood, bar),
-			fmt.Sprintf("😾 Purrito hisses softly at %s… his heart hurts. your love meter decreased to %d%% with status :: %s %s", player, love, mood, bar),
-			fmt.Sprintf("😿 Purrito lowers his ears… %s made him sad. your love meter decreased to %d%% with status :: %s %s", player, love, mood, bar),
-			fmt.Sprintf("😿 Purrito looks betrayed by %s. your love meter decreased to %d%% with status :: %s %s", player, love, mood, bar),
-			fmt.Sprintf("💢 Purrito steps back from %s… do not hurt him. your love meter decreased to %d%% with status :: %s %s", player, love, mood, bar),
+			fmt.Sprintf("😾 Purrito swats back at %s and looks hurt. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😾 Purrito hisses softly at %s… his heart hurts. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😿 Purrito lowers his ears… %s made him sad. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😿 Purrito looks betrayed by %s. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😾 Purrito steps back from %s… do not hurt him. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 		}
 
 		return secondPunishments[rand.Intn(len(secondPunishments))]
@@ -214,11 +226,11 @@ func (ca *CatActions) feedAcceptMessage(player, food string) string {
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	lines := []string{
-		fmt.Sprintf("😺 Purrito happily munches the %s you gave, %s! Your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("😺 Purrito happily munches the %s you gave, %s! Your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
-		fmt.Sprintf("😻 Purrito devours the %s and purrs loudly at %s. Your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("😻 Purrito devours the %s and purrs loudly at %s. Your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
-		fmt.Sprintf("🍣 Purrito LOVES the %s from %s. Your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("🍣 Purrito LOVES the %s from %s. Your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
 	}
 	return lines[rand.Intn(len(lines))]
@@ -231,11 +243,11 @@ func (ca *CatActions) feedRejectMessage(player, food string) string {
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	lines := []string{
-		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
-		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
-		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% and purrito is now %s %s",
 			food, player, love, mood, bar),
 	}
 	return lines[rand.Intn(len(lines))]
@@ -247,58 +259,53 @@ func (ca *CatActions) statusMessage(player string) string {
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	return fmt.Sprintf("Purrito status for %s and your love meter is %d%% with status :: %s %s",
+	return fmt.Sprintf("Purrito status for %s and your love meter is %d%% and purrito is now %s %s",
 		player, love, mood, bar)
 }
 
-// catnipMessage handles !catnip purrito logic
+// catnipMessage handles !catnip purrito logic (once per day, 55% accept / 45% reject)
 func (ca *CatActions) catnipMessage(player string) string {
+	key := strings.ToLower(strings.TrimSpace(player))
+	now := time.Now()
+
+	// ✅ once per day check
+	if last, ok := ca.catnipUsedAt[key]; ok && sameDayNY(last, now) {
+		return fmt.Sprintf("aww %s, you already used catnip today. Try again tomorrow...", player)
+	}
+	ca.catnipUsedAt[key] = now
+
 	roll := rand.Intn(100) // 0–99
 
-	// 0–59: happy catnip
-	if roll < 60 {
+	// ✅ 55% accept (0–54): big happy (+3)
+	if roll < 55 {
 		ca.LoveMeter.Increase(player, 3)
 		love := ca.LoveMeter.Get(player)
 		mood := ca.LoveMeter.GetMood(player)
 		bar := ca.LoveMeter.GetLoveBar(player)
 
 		variants := []string{
-			fmt.Sprintf("🌿😺 Purrito sniffs the catnip and flops over, rolling around happily at %s... your love meter is now %d%% with status :: %s %s",
+			fmt.Sprintf("🌿😺 Purrito sniffs the catnip and flops over, rolling around happily at %s... your love meter is now %d%% and purrito is now %s %s",
 				player, love, mood, bar),
-			fmt.Sprintf("🌿😻 Purrito licks the catnip and goes into hyper-purr mode around %s... your love meter is now %d%% with status :: %s %s",
+			fmt.Sprintf("🌿😻 Purrito licks the catnip and goes into hyper-purr mode around %s... your love meter is now %d%% and purrito is now %s %s",
 				player, love, mood, bar),
-			fmt.Sprintf("🌿🐾 Purrito cuddles into the catnip near %s and purrs loudly... your love meter is now %d%% with status :: %s %s",
-				player, love, mood, bar),
-		}
-		return variants[rand.Intn(len(variants))]
-	}
-
-	// 60–89: zoomies, still good (+2)
-	if roll < 90 {
-		ca.LoveMeter.Increase(player, 2)
-		love := ca.LoveMeter.Get(player)
-		mood := ca.LoveMeter.GetMood(player)
-		bar := ca.LoveMeter.GetLoveBar(player)
-
-		variants := []string{
-			fmt.Sprintf("🌿💨 Purrito zooms around the room after the catnip from %s... your love meter is now %d%% with status :: %s %s",
-				player, love, mood, bar),
-			fmt.Sprintf("🌿😹 Purrito chases imaginary butterflies after your catnip, %s... your love meter is now %d%% with status :: %s %s",
+			fmt.Sprintf("🌿🐾 Purrito cuddles into the catnip near %s and purrs loudly... your love meter is now %d%% and purrito is now %s %s",
 				player, love, mood, bar),
 		}
 		return variants[rand.Intn(len(variants))]
 	}
 
-	// 90–99: overstimulated, small penalty (−1)
+	// ✅ 45% reject (55–99): overstimulated / picky (−1)
 	ca.LoveMeter.Decrease(player, 1)
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	variants := []string{
-		fmt.Sprintf("🌿🙀 Purrito gets a bit overwhelmed by the catnip from %s and needs a break. your love meter decreased to %d%% with status :: %s %s",
+		fmt.Sprintf("🌿🙀 Purrito gets overwhelmed by the catnip from %s and needs space. your love meter decreased to %d%% and purrito is now %s %s",
 			player, love, mood, bar),
-		fmt.Sprintf("🌿🙀 Purrito sneezes and steps back from the catnip %s gave... maybe a little too strong. your love meter is now %d%% with status :: %s %s",
+		fmt.Sprintf("🌿😾 Purrito sneezes and backs away from %s’s catnip... too strong! your love meter decreased to %d%% and purrito is now %s %s",
+			player, love, mood, bar),
+		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s",
 			player, love, mood, bar),
 	}
 	return variants[rand.Intn(len(variants))]

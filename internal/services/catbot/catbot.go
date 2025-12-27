@@ -12,14 +12,31 @@ import (
 	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 )
 
-func init() { rand.Seed(time.Now().UnixNano()) }
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
-// IRC client shim
+// --------------------------------------------------
+// Interfaces
+// --------------------------------------------------
+
 type IRCClient interface {
 	Privmsg(channel, message string)
 }
 
-// CatBot handles cat actions and message responses
+// รองรับ daily decay แบบมี warning
+type dailyDecayerWithWarning interface {
+	DailyDecayWithWarning(ctx context.Context) ([]string, error)
+}
+
+type dailyDecayer interface {
+	DailyDecayAll(ctx context.Context) error
+}
+
+// --------------------------------------------------
+// CatBot
+// --------------------------------------------------
+
 type CatBot struct {
 	IrcClient     IRCClient
 	CatActions    cat_actions.CatActionsImpl
@@ -29,115 +46,153 @@ type CatBot struct {
 	CatPlayerRepo cat_player.CatPlayerRepository
 
 	mu           sync.RWMutex
-	presentUntil time.Time // Purrito is "present" until this time (gates !pet/!love)
-	lastAppear   time.Time // last time Purrito appeared
-	nextAppear   time.Time // scheduled next appearance
-	appearedAt   time.Time // start time of the current appearance window
-	interacted   bool      // flipped true if !pet or !laser happened since appearedAt
+	presentUntil time.Time
+	lastAppear   time.Time
+	nextAppear   time.Time
+	appearedAt   time.Time
+	interacted   bool
 }
 
-// NewCatBot initializes the CatBot instance
-func NewCatBot(client IRCClient, catPlayerRepo cat_player.CatPlayerRepository, network, channel string) *CatBot {
+// --------------------------------------------------
+// Constructor
+// --------------------------------------------------
+
+func NewCatBot(
+	client IRCClient,
+	catPlayerRepo cat_player.CatPlayerRepository,
+	network, channel string,
+) *CatBot {
 	return &CatBot{
 		IrcClient:     client,
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{1800}, // ~ every 30 minutes
+		times:         []int{180}, // 30 นาที 1800 วินาที
 		CatPlayerRepo: catPlayerRepo,
 	}
 }
 
-// consumePresence allows exactly one interaction during the window
+// --------------------------------------------------
+// Presence helpers
+// --------------------------------------------------
+
 func (cb *CatBot) consumePresence() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
+
 	if time.Now().Before(cb.presentUntil) {
-		// mark as interacted
 		cb.presentUntil = time.Now()
+		cb.interacted = true
 		return true
 	}
 	return false
 }
 
-// IsPresent reports whether Purrito is currently visible (within presence window).
 func (cb *CatBot) IsPresent() bool {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return time.Now().Before(cb.presentUntil)
 }
 
-// AppearTimes returns the last and next appearance times (thread-safe).
 func (cb *CatBot) AppearTimes() (last, next time.Time) {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return cb.lastAppear, cb.nextAppear
 }
 
-func (cb *CatBot) MarkInteracted() {
-	cb.mu.Lock()
-	cb.interacted = true
-	cb.mu.Unlock()
-}
+// --------------------------------------------------
+// Command handler
+// --------------------------------------------------
 
-// HandleCatCommand processes commands like "!pet purrito" from users
 func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 	nick := context_manager.GetNickContext(ctx)
 
 	if len(args) == 0 {
-		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
+		cb.IrcClient.Privmsg(cb.Channel, "Check !purrito for help")
 		return nil
 	}
+
 	parts := strings.Fields(args[0])
 	if len(parts) < 2 {
-		cb.IrcClient.Privmsg(cb.Channel, "Usage: !pet purrito")
+		cb.IrcClient.Privmsg(cb.Channel, "Check !purrito for help")
 		return nil
 	}
 
-	rawAction := strings.TrimPrefix(parts[0], "!")
-	action := strings.ToLower(rawAction)
+	action := strings.ToLower(strings.TrimPrefix(parts[0], "!"))
 	target := parts[1]
 
-	// commands that require Purrito to be present
 	needsPurritoPresent := map[string]bool{
 		"pet":    true,
 		"love":   true,
 		"feed":   true,
 		"catnip": true,
+		"laser":  true,
 	}
 
-	// If the command requires Purrito to be present and the target is purrito
 	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
 		if !cb.consumePresence() {
-			// Someone else already interacted or the 10-minute window has passed
-			cb.IrcClient.Privmsg(cb.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
+			cb.IrcClient.Privmsg(
+				cb.Channel,
+				"🐾 Purrito is not here right now. Wait until he shows up!",
+			)
 			return nil
 		}
-		// This user is the one who "made it" in this round → count as successful interaction
-		cb.MarkInteracted()
 	}
 
-	// Forward to CatActions to generate the response message
 	response := cb.CatActions.ExecuteAction(action, nick, target)
 	cb.IrcClient.Privmsg(cb.Channel, response)
 	return nil
 }
 
+// --------------------------------------------------
+// Game loop (ONLY ONE Start)
+// --------------------------------------------------
+
 func (cb *CatBot) Start(ctx context.Context) {
+	appearTimer := time.NewTimer(0)
+	defer appearTimer.Stop()
+
+	decayTicker := time.NewTicker(24 * time.Hour)
+	defer decayTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			cb.HandleRandomAction() // Purrito appears now
-			// Sleep until next appearance (~30 min)
+
+		case <-appearTimer.C:
+			cb.HandleRandomAction()
+
 			wait := cb.times[rand.Intn(len(cb.times))]
-			time.Sleep(time.Duration(wait) * time.Second)
+			cb.mu.Lock()
+			cb.nextAppear = time.Now().Add(time.Duration(wait) * time.Second)
+			cb.mu.Unlock()
+
+			appearTimer.Reset(time.Duration(wait) * time.Second)
+
+		case <-decayTicker.C:
+			if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
+				if d, ok := any(ca.LoveMeter).(dailyDecayerWithWarning); ok {
+					msgs, err := d.DailyDecayWithWarning(context.Background())
+					if err == nil {
+						for _, m := range msgs {
+							cb.IrcClient.Privmsg(cb.Channel, m)
+						}
+					}
+					continue
+				}
+				if d, ok := any(ca.LoveMeter).(dailyDecayer); ok {
+					_ = d.DailyDecayAll(context.Background())
+				}
+			}
 		}
 	}
 }
 
-// HandleRandomAction: Purrito appears, stays 10 minutes (message if no interaction), presence is 5 minutes for !pet/!love
+// --------------------------------------------------
+// Appearance logic
+// --------------------------------------------------
+
 func (cb *CatBot) HandleRandomAction() {
 	action := cb.CatActions.GetRandomAction()
 	cb.IrcClient.Privmsg(cb.Channel, "🐈 meowww ... "+action)
@@ -146,22 +201,24 @@ func (cb *CatBot) HandleRandomAction() {
 
 	cb.mu.Lock()
 	cb.lastAppear = now
-	cb.nextAppear = now.Add(30 * time.Minute)   // cadence
-	cb.presentUntil = now.Add(10 * time.Minute) // interactable 10m
+	cb.presentUntil = now.Add(10 * time.Minute)
 	cb.appearedAt = now
 	cb.interacted = false
 	cb.mu.Unlock()
 
-	// After 10 minutes from this appearance, if nobody interacted, post the “wanders off” line.
 	go func(appearTime time.Time) {
-		<-time.After(10 * time.Minute)
+		time.Sleep(10 * time.Minute)
+
 		cb.mu.RLock()
-		stillSameAppear := cb.appearedAt.Equal(appearTime)
+		stillSame := cb.appearedAt.Equal(appearTime)
 		quiet := !cb.interacted
 		cb.mu.RUnlock()
 
-		if stillSameAppear && quiet {
-			cb.IrcClient.Privmsg(cb.Channel, "(=^‥^=)っ ... stretches, yawns, and wanders off into the shadows ... 🐾 (=^‥^=)っ")
+		if stillSame && quiet {
+			cb.IrcClient.Privmsg(
+				cb.Channel,
+				"(=^‥^=)っ stretches, yawns, and wanders off into the shadows 🐾",
+			)
 		}
 	}(now)
 }

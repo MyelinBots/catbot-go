@@ -13,62 +13,62 @@ import (
 
 type CommandController interface {
 	HandleCommand(ctx context.Context, line *irc.Line) error
-	AddCommand(command string, handler func(ctx context.Context, args ...string) error)
+	AddCommand(command string, handler func(ctx context.Context, message string) error)
 }
 
 type CommandControllerImpl struct {
 	game     *catbot.CatBot
-	commands map[string]func(ctx context.Context, args ...string) error
+	commands map[string]func(ctx context.Context, message string) error
 }
 
-// Constructor
 func NewCommandController(gameinstance *catbot.CatBot) CommandController {
 	return &CommandControllerImpl{
 		game:     gameinstance,
-		commands: make(map[string]func(ctx context.Context, args ...string) error),
+		commands: make(map[string]func(ctx context.Context, message string) error),
 	}
 }
 
 // HandleCommand parses an IRC line and dispatches to the correct handler
 func (c *CommandControllerImpl) HandleCommand(ctx context.Context, line *irc.Line) error {
+	if len(line.Args) < 2 {
+		return nil
+	}
+
 	message := line.Args[1]
-	command := strings.Split(message, " ")[0]
-	if handler, exists := c.commands[command]; exists {
+	command := strings.Fields(message)
+	if len(command) == 0 {
+		return nil
+	}
+
+	cmd := command[0]
+	if handler, exists := c.commands[cmd]; exists {
 		ctx = context_manager.SetNickContext(ctx, line.Nick)
-		// pass the full message so handlers can parse args if needed
 		return handler(ctx, message)
 	}
 	return nil
 }
 
-// AddCommand registers a command handler
-func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx context.Context, args ...string) error) {
+func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx context.Context, message string) error) {
 	c.commands[command] = handler
 }
 
-// PurritoLaserHandler shows when Purrito was last seen and when he'll appear again.
-func (c *CommandControllerImpl) PurritoLaserHandler() func(ctx context.Context, args ...string) error {
-	return func(ctx context.Context, args ...string) error {
+// PurritoLaserHandler: handles ONLY "!laser purrito"
+func (c *CommandControllerImpl) PurritoLaserHandler() func(ctx context.Context, message string) error {
+	return func(ctx context.Context, message string) error {
 		nick := context_manager.GetNickContext(ctx)
-		if len(args) == 0 {
-			return nil
-		}
-		msg := strings.TrimSpace(args[0])
-		parts := strings.Fields(msg)
-		if len(parts) < 2 || !strings.HasPrefix(parts[0], "!laser") || !strings.EqualFold(parts[1], "purrito") {
+
+		parts := strings.Fields(strings.TrimSpace(message))
+		// Expect: !laser purrito
+		if len(parts) < 2 || !strings.EqualFold(parts[0], "!laser") || !strings.EqualFold(parts[1], "purrito") {
 			return nil
 		}
 
-		// Require Purrito to be present
+		// Require Purrito to be present (time window)
 		if !c.game.IsPresent() {
 			c.game.IrcClient.Privmsg(c.game.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
 			return nil
 		}
 
-		// Count as an interaction for the current appearance window
-		c.game.MarkInteracted()
-
-		// Random playful laser reactions
 		laserMoves := []string{
 			"🔦⚡️ The laser flickers! Purrito darts after it, paws flying everywhere!",
 			"🔦⚡️ Purrito spots the laser and wiggles — then pounces!",
@@ -79,10 +79,15 @@ func (c *CommandControllerImpl) PurritoLaserHandler() func(ctx context.Context, 
 		}
 		c.game.IrcClient.Privmsg(c.game.Channel, laserMoves[rand.Intn(len(laserMoves))])
 
-		// Small love boost for playful interaction (guard the type assert)
+		// Optional: small love boost (safe assert)
 		if ca, ok := c.game.CatActions.(*cat_actions.CatActions); ok {
 			ca.LoveMeter.Increase(nick, 1)
 		}
+
+		// Optional: if you still want laser to count as "interaction" for the leave message,
+		// you have two options:
+		// 1) Put "laser" inside needsPurritoPresent in CatBot.HandleCatCommand (recommended)
+		// 2) Or add a public method in catbot: MarkInteracted() and call it here.
 		return nil
 	}
 }
