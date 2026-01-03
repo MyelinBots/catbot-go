@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// TopLove5Handler shows top 5 by LoveMeter from cat_player table.
-// Register with: cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove5Handler())
+// TopLove10Handler shows top 10 by LoveMeter from cat_player table.
+// Register with: cmds.AddCommand("!toplove", cmds.(*commands.CommandControllerImpl).TopLove10Handler())
 // internal/services/commands/toplove.go
-func (c *CommandControllerImpl) TopLove5Handler() func(ctx context.Context, args ...string) error {
+func (c *CommandControllerImpl) TopLove10Handler() func(ctx context.Context, args ...string) error {
 	return func(ctx context.Context, args ...string) error {
 		if len(args) == 0 {
 			return nil
@@ -20,7 +20,7 @@ func (c *CommandControllerImpl) TopLove5Handler() func(ctx context.Context, args
 			return nil
 		}
 
-		players, err := c.game.CatPlayerRepo.TopLoveMeter(ctx, c.game.Network, c.game.Channel, 5)
+		players, err := c.game.CatPlayerRepo.TopLoveMeter(ctx, c.game.Network, c.game.Channel, 10)
 		if err != nil {
 			// TEMP: surface the real error so we can fix it
 			errMsg := fmt.Sprintf("toplove error: %v", err)
@@ -34,7 +34,7 @@ func (c *CommandControllerImpl) TopLove5Handler() func(ctx context.Context, args
 			return nil
 		}
 
-		out := "💖😽 See who Purrito loves the most (Top 5): "
+		out := "💖😽 See who Purrito loves the most (Top 10): "
 		for i, p := range players {
 			if i > 0 {
 				out += "  •  "
