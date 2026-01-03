@@ -94,7 +94,7 @@ func StartBot() error {
 		cmds.AddCommand("!invite", adaptVarArgs(commands.InviteHandler(conn)))
 
 		// 3 อันนี้ signature เป็น (ctx, message string) อยู่แล้ว -> ไม่ต้อง adapt
-		cmds.AddCommand("!toplove", adaptVarArgs(cmds.TopLove5Handler()))
+		cmds.AddCommand("!toplove", adaptVarArgs(cmds.TopLove10Handler()))
 		cmds.AddCommand("!purrito", adaptVarArgs(cmds.PurritoHandler()))
 
 		gameInstances.games[channel] = game
