@@ -1,18 +1,41 @@
 # postgres database
 version: '3.8'
 services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - db
+    environment:
+      - HOST=${IRC_HOST}
+      - PORT=${IRC_PORT}
+      - SSL=${IRC_SSL}
+      - NICK=${IRC_NICK}
+      - USER=${IRC_USER}
+      - CHANNELS=${IRC_CHANNELS}
+      - NETWORK=${IRC_NETWORK}
+      - NICKSERV_PASSWORD=${IRC_NICKSERV_PASSWORD}
+      - PASSWORD=${IRC_PASSWORD}
+      - DBHOST=db
+      - DBPORT=5432
+      - DBNAME=${POSTGRES_DB}
+      - DBUSERNAME=${POSTGRES_USER}
+      - DBPASSWORD=${POSTGRES_PASSWORD}
+      - DBSSL=disable
+
   db:
     image: postgres:15
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 3K@HJLpnogA7r*_oZ32g9j9N_Va2jJ-D
-      POSTGRES_DB: catbot
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
-
 
 volumes:
   db_data:
