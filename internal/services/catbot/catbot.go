@@ -67,7 +67,7 @@ func NewCatBot(
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{180}, // 30 นาที 1800 วินาที
+		times:         []int{1800}, // 30 นาที 1800 วินาที 5 mins 600 วินาที
 		CatPlayerRepo: catPlayerRepo,
 	}
 }
@@ -221,4 +221,17 @@ func (cb *CatBot) HandleRandomAction() {
 			)
 		}
 	}(now)
+}
+
+// ConsumePresence makes Purrito vanish immediately (same logic as pet/feed/love).
+func (cb *CatBot) ConsumePresence() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	if time.Now().Before(cb.presentUntil) {
+		cb.presentUntil = time.Now()
+		cb.interacted = true
+		return true
+	}
+	return false
 }

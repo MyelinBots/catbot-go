@@ -177,12 +177,12 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		food := foods[rand.Intn(len(foods))]
 
 		roll := rand.Intn(100)
-		if roll < 70 {
-			// 70% accept, +2 love
-			ca.LoveMeter.Increase(player, 2)
+		if roll < 60 {
+			// 60% accept, +1 love
+			ca.LoveMeter.Increase(player, 1)
 			return ca.feedAcceptMessage(player, food)
 		}
-		// 30% picky / reject, -1 love
+		// 40% picky / reject, -1 love
 		ca.LoveMeter.Decrease(player, 1)
 		return ca.feedRejectMessage(player, food)
 
@@ -276,8 +276,8 @@ func (ca *CatActions) catnipMessage(player string) string {
 
 	roll := rand.Intn(100) // 0–99
 
-	// ✅ 55% accept (0–54): big happy (+3)
-	if roll < 55 {
+	// ✅ 70% accept (0–69): big happy (+3)
+	if roll < 70 {
 		ca.LoveMeter.Increase(player, 3)
 		love := ca.LoveMeter.Get(player)
 		mood := ca.LoveMeter.GetMood(player)
@@ -294,7 +294,7 @@ func (ca *CatActions) catnipMessage(player string) string {
 		return variants[rand.Intn(len(variants))]
 	}
 
-	// ✅ 45% reject (55–99): overstimulated / picky (−1)
+	// ✅ 30% reject (70–99): overstimulated / picky (−1)
 	ca.LoveMeter.Decrease(player, 1)
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)

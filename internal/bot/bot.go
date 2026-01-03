@@ -86,6 +86,8 @@ func StartBot() error {
 		cmds.AddCommand("!feed", adaptVarArgs(game.HandleCatCommand))
 		cmds.AddCommand("!status", adaptVarArgs(game.HandleCatCommand))
 		cmds.AddCommand("!catnip", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!kick", adaptVarArgs(game.HandleCatCommand))
+		cmds.AddCommand("!laser", cmds.PurritoLaserHandler())
 
 		// extra commands
 		// InviteHandler เป็น varargs -> adapt
@@ -94,7 +96,6 @@ func StartBot() error {
 		// 3 อันนี้ signature เป็น (ctx, message string) อยู่แล้ว -> ไม่ต้อง adapt
 		cmds.AddCommand("!toplove", adaptVarArgs(cmds.TopLove5Handler()))
 		cmds.AddCommand("!purrito", adaptVarArgs(cmds.PurritoHandler()))
-		cmds.AddCommand("!laser", cmds.PurritoLaserHandler())
 
 		gameInstances.games[channel] = game
 		gameInstances.commandInstances[channel] = cmds

@@ -10,15 +10,20 @@ import (
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 )
 
+// --------------------
+// interface + constructor
+// --------------------
+
 type LoveMeter interface {
 	Increase(player string, amount int)
 	Decrease(player string, amount int)
+
 	Get(player string) int
 	GetLoveBar(player string) string
 	GetMood(player string) string
 	StatusLine(player string) string
 
-	// decrease 1 % once a day (only those who have reached 100%)
+	// decrease once a day (only those who have reached 100%)
 	DailyDecayAll(ctx context.Context) error
 }
 
@@ -40,16 +45,10 @@ func NewLoveMeter(catPlayerRepo cat_player.CatPlayerRepository, network, channel
 }
 
 // --------------------
-// helpers
+// normalization + cache
 // --------------------
 
 func norm(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
-
-func sameDay(a, b time.Time) bool {
-	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
-	return ay == by && am == bm && ad == bd
-}
 
 func (lm *LoveMeterImpl) setCache(key string, v int) {
 	lm.mu.Lock()
@@ -64,18 +63,59 @@ func (lm *LoveMeterImpl) getCache(key string) (int, bool) {
 	return v, ok
 }
 
-func clamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
+// --------------------
+// love rules (cap + bonded bar)
+// --------------------
+
+func ClampLove(love int) int {
+	if love < 0 {
+		return 0
 	}
-	if v > hi {
-		return hi
+	if love > 100 {
+		return 100
 	}
-	return v
+	return love
 }
 
+func IsBonded(love int) bool {
+	// since love is capped at 100, >= is fine; you can switch to == if you prefer
+	return love >= 100
+}
+
+func RenderLoveBar(love int) string {
+	love = ClampLove(love)
+
+	if IsBonded(love) {
+		return "[❤️✨❤️✨❤️✨❤️✨❤️]"
+	}
+
+	filled := love / 10 // 0..10
+	bar := "["
+	for i := 0; i < filled; i++ {
+		bar += "❤️"
+	}
+	for i := filled; i < 10; i++ {
+		bar += "░"
+	}
+	bar += "]"
+	return bar
+}
+
+// --------------------
+// time helpers
+// --------------------
+
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// --------------------
+// persistence
+// --------------------
+
 func (lm *LoveMeterImpl) persistLove(key string, love int) {
-	// cache values first (field times interaction/decay will be handled in another layer)
 	_ = lm.catPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
 		Name:      key,
 		LoveMeter: love,
@@ -85,14 +125,14 @@ func (lm *LoveMeterImpl) persistLove(key string, love int) {
 }
 
 // --------------------
-// core API
+// core API (mutations + reads)
 // --------------------
 
 func (lm *LoveMeterImpl) Increase(player string, amount int) {
 	key := norm(player)
 	current := lm.Get(key)
 
-	newVal := clamp(current+amount, 0, 100)
+	newVal := ClampLove(current + amount)
 	lm.setCache(key, newVal)
 	lm.persistLove(key, newVal)
 }
@@ -101,7 +141,7 @@ func (lm *LoveMeterImpl) Decrease(player string, amount int) {
 	key := norm(player)
 	current := lm.Get(key)
 
-	newVal := clamp(current-amount, 0, 100)
+	newVal := ClampLove(current - amount)
 	lm.setCache(key, newVal)
 	lm.persistLove(key, newVal)
 }
@@ -121,14 +161,12 @@ func (lm *LoveMeterImpl) Get(player string) int {
 		return 0
 	}
 
-	lm.setCache(key, fp.LoveMeter)
-	return fp.LoveMeter
+	lm.setCache(key, ClampLove(fp.LoveMeter))
+	return ClampLove(fp.LoveMeter)
 }
 
 func (lm *LoveMeterImpl) GetLoveBar(player string) string {
-	love := lm.Get(player)
-	hearts := clamp(love, 0, 100) / 10 // 0..10
-	return fmt.Sprintf("[%s%s]", strings.Repeat("❤️", hearts), strings.Repeat("░", 10-hearts))
+	return RenderLoveBar(lm.Get(player))
 }
 
 func (lm *LoveMeterImpl) GetMood(player string) string {
@@ -157,8 +195,8 @@ func (lm *LoveMeterImpl) StatusLine(player string) string {
 // --------------------
 
 // DailyDecayAll:
-// - fine user who reached 100% (repo.ListPlayersAt100)
-// - if today hasn't interacted and hasn't decayed today -> decrease 1% and set LastDecayAt
+// - find users who reached 100% (repo.ListPlayersAtOrAbove(..., 100))
+// - if today hasn't interacted and hasn't decayed today -> decrease 5 and set LastDecayAt
 func (lm *LoveMeterImpl) DailyDecayAll(ctx context.Context) error {
 	now := time.Now()
 
@@ -168,7 +206,7 @@ func (lm *LoveMeterImpl) DailyDecayAll(ctx context.Context) error {
 	}
 
 	for _, p := range players {
-		// to prevent double decay in a day
+		// prevent double decay in a day
 		if p.LastDecayAt != nil && sameDay(*p.LastDecayAt, now) {
 			continue
 		}
@@ -177,10 +215,7 @@ func (lm *LoveMeterImpl) DailyDecayAll(ctx context.Context) error {
 			continue
 		}
 
-		// decrease 5 and update cache/DB love_meter
 		lm.Decrease(p.Name, 5)
-
-		// set last_decay_at
 		_ = lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now)
 	}
 
@@ -198,7 +233,7 @@ func (lm *LoveMeterImpl) DailyDecayWithWarning(ctx context.Context) ([]string, e
 	var announcements []string
 
 	for _, p := range players {
-		// to prevent double decay in a day
+		// prevent double decay in a day
 		if p.LastDecayAt != nil && sameDay(*p.LastDecayAt, now) {
 			continue
 		}
@@ -208,20 +243,12 @@ func (lm *LoveMeterImpl) DailyDecayWithWarning(ctx context.Context) ([]string, e
 		}
 
 		oldLove := p.LoveMeter
-		newLove := oldLove - 5
-		if newLove < 0 {
-			newLove = 0
-		}
 
-		// decrease 5 (will persist)
 		lm.Decrease(p.Name, 5)
-
-		// set last_decay_at
 		_ = lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now)
 
-		// ✅ warning ครั้งแรกเท่านั้น ตอน 100 -> 95
+		// warning only once: 100 -> 95
 		if oldLove == 100 && !p.PerfectDropWarned {
-			// warning message
 			announcements = append(announcements,
 				fmt.Sprintf("😿 Purrito is waiting but %s did not come today, the perfect bond has begun to fade (100%% → 95%%) 🐾", p.Name),
 			)
