@@ -37,6 +37,41 @@ CatBot is a lightweight IRC bot built in Go that brings a virtual cat named **Pu
 | 80-99% | Loves you |
 | 100% | Perfect bond |
 
+## Command Probabilities
+
+| Command | Accept Chance | Reject Chance | Love Change |
+|---------|---------------|---------------|-------------|
+| `!pet` / `!love` | 60% | 40% | +1 (accept) / -1 (reject) |
+| `!feed` | 60% | 40% | +1 (accept) / -1 (reject) |
+| `!laser` | 60% | 40% | +1 (accept) / -1 (reject) |
+| `!catnip` | 70% | 30% | +3 (accept) / -1 (reject) |
+| `!slap` | - | - | Warning first, then -1 |
+
+Note: `!catnip` can only be used once per day per user.
+
+## Timings
+
+| Event | Duration |
+|-------|----------|
+| Purrito appearance interval | Every 30 minutes |
+| Purrito presence duration | 10 minutes |
+| Love decay check | Every 24 hours |
+| Love decay amount | -5 (only at 100% love if no interaction) |
+
+### Presence System
+
+- Purrito randomly appears in the channel every 30 minutes
+- Once present, Purrito stays for 10 minutes waiting for interaction
+- Commands like `!pet`, `!feed`, and `!laser` require Purrito to be present
+- After a user interacts, Purrito's presence is consumed (disappears)
+- If no one interacts within 10 minutes, Purrito leaves with a farewell message
+
+### Daily Decay
+
+- Players at 100% love (perfect bond) will lose 5 love points if they don't interact within 24 hours
+- A warning message is sent on the first decay
+- This encourages regular interaction to maintain the bond
+
 ## Getting Started
 
 ### Prerequisites
