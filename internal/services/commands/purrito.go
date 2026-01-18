@@ -18,7 +18,7 @@ func (c *CommandControllerImpl) PurritoHandler() func(ctx context.Context, args 
 			" * !feed purrito :::: Feed me some tasty treats 🍣 🍗 🍤 🍉",
 			" * !slap purrito :::: Tease me... but be careful 👋😼",
 			" * !catnip purrito :::: Give me some catnip to boost my mood 🌿😸",
-			" * !laser :::: Find out when I was last seen chasing lasers 🔦⚡️",
+			" * !laser purrito :::: Find out when I was last seen chasing lasers 🔦⚡️",
 			" * !status purrito :::: Check your love percentage, mood, and love bar ❤️😽",
 			" * !purrito :::: Learn who I am and how the game works 🐱",
 			" * !toplove :::: See who I love the most 💖",

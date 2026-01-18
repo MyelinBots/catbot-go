@@ -11,17 +11,17 @@ import (
 )
 
 /*
-Model
+MODEL
 */
 
 type CatPlayer struct {
-	ID        string    `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ID        uint      `gorm:"column:id;primaryKey;autoIncrement" json:"id"` // ✅ MySQL friendly
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 
-	Name    string `gorm:"column:name;type:text;not null;index:idx_player_scope,priority:1"`
-	Network string `gorm:"column:network;type:text;not null;index:idx_player_scope,priority:2"`
-	Channel string `gorm:"column:channel;type:text;not null;index:idx_player_scope,priority:3"`
+	Name    string `gorm:"column:name;type:varchar(100);not null;index:idx_player_scope,priority:1"`
+	Network string `gorm:"column:network;type:varchar(100);not null;index:idx_player_scope,priority:2"`
+	Channel string `gorm:"column:channel;type:varchar(100);not null;index:idx_player_scope,priority:3"`
 
 	LoveMeter int `gorm:"column:love_meter;type:int;not null;default:0"`
 	Count     int `gorm:"column:count;type:int;not null;default:0"`
@@ -30,31 +30,48 @@ type CatPlayer struct {
 	LastDecayAt      *time.Time `gorm:"column:last_decay_at;index"`
 
 	PerfectDropWarned bool `gorm:"column:perfect_drop_warned;not null;default:false"`
+
+	// ✅ Bond system (independent from lovemeter except gate love==100)
+	BondPoints        int        `gorm:"column:bond_points;type:int;not null;default:0"`
+	BondPointStreak   int        `gorm:"column:bond_point_streak;type:int;not null;default:0"`
+	HighestBondStreak int        `gorm:"column:highest_bond_streak;type:int;not null;default:0"`
+	LastBondPointsAt  *time.Time `gorm:"column:last_bond_points_at;index"`
+
+	// bitmask gifts
+	GiftsUnlocked int `gorm:"column:gifts_unlocked;type:int;not null;default:0"`
 }
 
 /*
-Repository interface
+REPOSITORY INTERFACE
 */
 
 type CatPlayerRepository interface {
-	GetPlayerByID(ctx context.Context, id string) (*CatPlayer, error)
+	GetPlayerByID(ctx context.Context, id uint) (*CatPlayer, error)
 	GetPlayerByName(ctx context.Context, name, network, channel string) (*CatPlayer, error)
 	GetAllPlayers(ctx context.Context, network, channel string) ([]*CatPlayer, error)
 
 	UpsertPlayer(ctx context.Context, player *CatPlayer) error
-
 	TopLoveMeter(ctx context.Context, network, channel string, limit int) ([]*CatPlayer, error)
 
-	// ✅ helpers สำหรับ daily decay / analytics
+	// daily decay helpers
 	TouchInteraction(ctx context.Context, name, network, channel string, t time.Time) error
 	SetDecayAt(ctx context.Context, name, network, channel string, t time.Time) error
 	ListPlayersAtOrAbove(ctx context.Context, network, channel string, minLove int) ([]*CatPlayer, error)
-
 	SetPerfectDropWarned(ctx context.Context, name, network, channel string, warned bool) error
+
+	// bond helpers
+	AddBondPoints(ctx context.Context, name, network, channel string, delta int) error
+	SetBondPointsAt(ctx context.Context, name, network, channel string, t time.Time) error
+	SetBondPointStreak(ctx context.Context, name, network, channel string, streak int) error
+	SetHighestBondStreak(ctx context.Context, name, network, channel string, streak int) error
+
+	// gifts (bitmask)
+	AddGiftsUnlocked(ctx context.Context, name, network, channel string, giftMask int) error
+	SetGiftsUnlocked(ctx context.Context, name, network, channel string, giftsUnlocked int) error
 }
 
 /*
-Repository impl
+REPOSITORY IMPL
 */
 
 type CatPlayerRepositoryImpl struct {
@@ -66,7 +83,7 @@ func NewPlayerRepository(database *db.DB) CatPlayerRepository {
 }
 
 /*
-Normalization helpers
+NORMALIZATION
 */
 
 func norm(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
@@ -79,7 +96,7 @@ func normScope(network, channel string) (string, string) {
 CRUD
 */
 
-func (r *CatPlayerRepositoryImpl) GetPlayerByID(ctx context.Context, id string) (*CatPlayer, error) {
+func (r *CatPlayerRepositoryImpl) GetPlayerByID(ctx context.Context, id uint) (*CatPlayer, error) {
 	var p CatPlayer
 	err := r.db.DB.WithContext(ctx).Where("id = ?", id).First(&p).Error
 	if err != nil {
@@ -122,7 +139,6 @@ func (r *CatPlayerRepositoryImpl) GetPlayerByName(ctx context.Context, name, net
 
 // Upsert by (name, network, channel)
 func (r *CatPlayerRepositoryImpl) UpsertPlayer(ctx context.Context, player *CatPlayer) error {
-	// normalize for consistent uniqueness
 	player.Name = norm(player.Name)
 	player.Network, player.Channel = normScope(player.Network, player.Channel)
 
@@ -138,13 +154,13 @@ func (r *CatPlayerRepositoryImpl) UpsertPlayer(ctx context.Context, player *CatP
 		return err
 	}
 
-	// keep same primary key; update values
+	// keep same primary key
 	player.ID = existing.ID
 	return r.db.DB.WithContext(ctx).Save(player).Error
 }
 
 /*
-Leaderboard
+LEADERBOARD
 */
 
 func (r *CatPlayerRepositoryImpl) TopLoveMeter(ctx context.Context, network, channel string, limit int) ([]*CatPlayer, error) {
@@ -165,7 +181,7 @@ func (r *CatPlayerRepositoryImpl) TopLoveMeter(ctx context.Context, network, cha
 }
 
 /*
-Daily-decay helpers
+DAILY DECAY HELPERS
 */
 
 func (r *CatPlayerRepositoryImpl) TouchInteraction(ctx context.Context, name, network, channel string, t time.Time) error {
@@ -175,7 +191,7 @@ func (r *CatPlayerRepositoryImpl) TouchInteraction(ctx context.Context, name, ne
 	return r.db.DB.WithContext(ctx).
 		Model(&CatPlayer{}).
 		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
-		Updates(map[string]any{"last_interacted_at": &t}).Error
+		Update("last_interacted_at", &t).Error
 }
 
 func (r *CatPlayerRepositoryImpl) SetDecayAt(ctx context.Context, name, network, channel string, t time.Time) error {
@@ -185,7 +201,7 @@ func (r *CatPlayerRepositoryImpl) SetDecayAt(ctx context.Context, name, network,
 	return r.db.DB.WithContext(ctx).
 		Model(&CatPlayer{}).
 		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
-		Updates(map[string]any{"last_decay_at": &t}).Error
+		Update("last_decay_at", &t).Error
 }
 
 func (r *CatPlayerRepositoryImpl) ListPlayersAtOrAbove(ctx context.Context, network, channel string, minLove int) ([]*CatPlayer, error) {
@@ -207,5 +223,76 @@ func (r *CatPlayerRepositoryImpl) SetPerfectDropWarned(ctx context.Context, name
 	return r.db.DB.WithContext(ctx).
 		Model(&CatPlayer{}).
 		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
-		Updates(map[string]any{"perfect_drop_warned": warned}).Error
+		Update("perfect_drop_warned", warned).Error
+}
+
+/*
+BOND HELPERS
+*/
+
+func (r *CatPlayerRepositoryImpl) AddBondPoints(ctx context.Context, name, network, channel string, delta int) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		UpdateColumn("bond_points", gorm.Expr("bond_points + ?", delta)).Error
+}
+
+func (r *CatPlayerRepositoryImpl) SetBondPointsAt(ctx context.Context, name, network, channel string, t time.Time) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		Update("last_bond_points_at", &t).Error
+}
+
+func (r *CatPlayerRepositoryImpl) SetBondPointStreak(ctx context.Context, name, network, channel string, streak int) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		Update("bond_point_streak", streak).Error
+}
+
+func (r *CatPlayerRepositoryImpl) SetHighestBondStreak(ctx context.Context, name, network, channel string, streak int) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		Update("highest_bond_streak", streak).Error
+}
+
+/*
+GIFTS (bitmask)
+MySQL-safe: use SQL bitwise OR
+*/
+
+func (r *CatPlayerRepositoryImpl) AddGiftsUnlocked(ctx context.Context, name, network, channel string, giftMask int) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).Exec(
+		`UPDATE cat_player
+		 SET gifts_unlocked = (gifts_unlocked | ?)
+		 WHERE name = ? AND network = ? AND channel = ?`,
+		giftMask, name, network, channel,
+	).Error
+}
+
+func (r *CatPlayerRepositoryImpl) SetGiftsUnlocked(ctx context.Context, name, network, channel string, giftsUnlocked int) error {
+	name = norm(name)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		Update("gifts_unlocked", giftsUnlocked).Error
 }

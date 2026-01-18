@@ -2,19 +2,20 @@ package catbot
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
+	"github.com/MyelinBots/catbot-go/internal/services/bondpoints"
+	"github.com/MyelinBots/catbot-go/internal/services/bondrewards"
 	"github.com/MyelinBots/catbot-go/internal/services/cat_actions"
 	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
+func init() { rand.Seed(time.Now().UnixNano()) }
 
 // --------------------------------------------------
 // Interfaces
@@ -24,14 +25,21 @@ type IRCClient interface {
 	Privmsg(channel, message string)
 }
 
-// รองรับ daily decay แบบมี warning
 type dailyDecayerWithWarning interface {
 	DailyDecayWithWarning(ctx context.Context) ([]string, error)
 }
-
 type dailyDecayer interface {
 	DailyDecayAll(ctx context.Context) error
 }
+
+// --------------------------------------------------
+// Presence tuning
+// --------------------------------------------------
+
+const (
+	appearEverySeconds = 300             // 5 minutes
+	presenceDuration   = 3 * time.Minute // stays 3 minutes
+)
 
 // --------------------------------------------------
 // CatBot
@@ -45,12 +53,16 @@ type CatBot struct {
 	times         []int
 	CatPlayerRepo cat_player.CatPlayerRepository
 
+	// presence state
 	mu           sync.RWMutex
 	presentUntil time.Time
 	lastAppear   time.Time
 	nextAppear   time.Time
 	appearedAt   time.Time
 	interacted   bool
+
+	// bonded endgame
+	BondPoints bondpoints.Service
 }
 
 // --------------------------------------------------
@@ -62,14 +74,16 @@ func NewCatBot(
 	catPlayerRepo cat_player.CatPlayerRepository,
 	network, channel string,
 ) *CatBot {
-	return &CatBot{
+	cb := &CatBot{
 		IrcClient:     client,
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{1800}, // 30 นาที 1800 วินาที 5 mins 600 วินาที
+		times:         []int{appearEverySeconds},
 		CatPlayerRepo: catPlayerRepo,
+		BondPoints:    bondpoints.New(catPlayerRepo),
 	}
+	return cb
 }
 
 // --------------------------------------------------
@@ -129,23 +143,28 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 		"laser":  true,
 	}
 
+	// must be present AND consume (vanish immediately)
 	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
 		if !cb.consumePresence() {
-			cb.IrcClient.Privmsg(
-				cb.Channel,
-				"🐾 Purrito is not here right now. Wait until he shows up!",
-			)
+			cb.IrcClient.Privmsg(cb.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
 			return nil
 		}
 	}
 
+	// execute action -> message contains love/mood/bar already
 	response := cb.CatActions.ExecuteAction(action, nick, target)
+
+	// append bonded progress ONLY for: !pet !love !feed !catnip !laser (target purrito)
+	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
+		response = cb.appendBondProgress(ctx, nick, response)
+	}
+
 	cb.IrcClient.Privmsg(cb.Channel, response)
 	return nil
 }
 
 // --------------------------------------------------
-// Game loop (ONLY ONE Start)
+// Game loop
 // --------------------------------------------------
 
 func (cb *CatBot) Start(ctx context.Context) {
@@ -201,13 +220,13 @@ func (cb *CatBot) HandleRandomAction() {
 
 	cb.mu.Lock()
 	cb.lastAppear = now
-	cb.presentUntil = now.Add(10 * time.Minute)
+	cb.presentUntil = now.Add(presenceDuration) // stays 3 minutes
 	cb.appearedAt = now
 	cb.interacted = false
 	cb.mu.Unlock()
 
 	go func(appearTime time.Time) {
-		time.Sleep(10 * time.Minute)
+		time.Sleep(presenceDuration)
 
 		cb.mu.RLock()
 		stillSame := cb.appearedAt.Equal(appearTime)
@@ -215,23 +234,70 @@ func (cb *CatBot) HandleRandomAction() {
 		cb.mu.RUnlock()
 
 		if stillSame && quiet {
-			cb.IrcClient.Privmsg(
-				cb.Channel,
-				"(=^‥^=)っ stretches, yawns, and wanders off into the shadows 🐾",
-			)
+			cb.IrcClient.Privmsg(cb.Channel, "(=^‥^=)っ stretches, yawns, and wanders off into the shadows 🐾")
 		}
 	}(now)
 }
 
-// ConsumePresence makes Purrito vanish immediately (same logic as pet/feed/love).
-func (cb *CatBot) ConsumePresence() bool {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
+// ConsumePresence makes Purrito vanish immediately.
+func (cb *CatBot) ConsumePresence() bool { return cb.consumePresence() }
 
-	if time.Now().Before(cb.presentUntil) {
-		cb.presentUntil = time.Now()
-		cb.interacted = true
-		return true
+// --------------------------------------------------
+// Bonded helper (formatting + DB reads)
+// --------------------------------------------------
+
+func (cb *CatBot) appendBondProgress(ctx context.Context, nick string, msg string) string {
+	ca, ok := cb.CatActions.(*cat_actions.CatActions)
+	if !ok || ca.LoveMeter == nil {
+		return msg
 	}
-	return false
+
+	// gate: must be bonded now
+	if ca.LoveMeter.Get(nick) != 100 {
+		return msg
+	}
+
+	// capture old highest before updating (for unlock-diff)
+	oldP, _ := cb.CatPlayerRepo.GetPlayerByName(ctx, nick, ca.Network, ca.Channel)
+	oldHighest := 0
+	if oldP != nil {
+		oldHighest = oldP.HighestBondStreak
+	}
+
+	// record bondpoints (once per NY day). No “already earned today” message.
+	res, err := cb.BondPoints.RecordBondedInteraction(ctx, nick, ca.Network, ca.Channel)
+	if err != nil {
+		return msg
+	}
+
+	// secret gifts unlock (based on HighestStreak progression)
+	unlocks := bondrewards.GiftUnlocks(oldHighest, res.HighestStreak)
+	if len(unlocks) > 0 {
+		mask := 0
+		for _, u := range unlocks {
+			mask |= u.GiftMask
+		}
+		// you need repo method: AddGiftsUnlocked(..., mask)
+		_ = cb.CatPlayerRepo.AddGiftsUnlocked(ctx, nick, ca.Network, ca.Channel, mask)
+
+		// “เนียน” = show only the first unlocked name
+		msg += fmt.Sprintf(" | 🎁 %s unlocked", unlocks[0].GiftName)
+	}
+
+	// cute title (mystical/pastel vibe)
+	title := bondrewards.TitleForHighestStreak(res.HighestStreak)
+
+	// ✅ format rules you asked:
+	// 1) count streak
+	// 2) bondpoints independent from lovemeter (only gated by love==100)
+	// 3) no “already earned today”
+	// 4) still have Total always
+	if res.AwardedPoints > 0 {
+		return msg + fmt.Sprintf(" | Streak: %d day(s) | +%d BondPoints | Total: %d | Title: %s",
+			res.Streak, res.AwardedPoints, res.TotalPoints, title,
+		)
+	}
+	return msg + fmt.Sprintf(" | Streak: %d day(s) | Total: %d | Title: %s",
+		res.Streak, res.TotalPoints, title,
+	)
 }

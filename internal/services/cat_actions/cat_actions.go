@@ -1,6 +1,7 @@
 package cat_actions
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -102,16 +103,37 @@ func sameDayNY(a, b time.Time) bool {
 	return aa.Year() == bb.Year() && aa.YearDay() == bb.YearDay()
 }
 
+// appendBondProgress appends endgame info ONLY when user is bonded (love==100).
+// NOTE: CatActions doesn't receive ctx today, so we use context.Background().
+// If you later pass ctx into ExecuteAction, swap Background() -> ctx.
+func (ca *CatActions) appendBondProgress(player string, msg string) string {
+	if ca.LoveMeter == nil {
+		return msg
+	}
+
+	// IMPORTANT: call AFTER love has been increased/decreased.
+	pts, streak, err := ca.LoveMeter.RecordInteraction(context.Background(), player)
+	_ = err // optionally log
+
+	if ca.LoveMeter.Get(player) != 100 {
+		return msg
+	}
+
+	if pts > 0 {
+		return msg + fmt.Sprintf(" | Bonded streak: %d day(s) | +%d BondPoints", streak, pts)
+	}
+
+	return msg + fmt.Sprintf(" | Bonded streak: %d day(s) | BondPoints already earned today", streak)
+}
+
 // ExecuteAction handles player actions toward purrito
-// 60% chance to ACCEPT a pet, 40% to REJECT.
 func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 	t := strings.ToLower(strings.TrimSpace(target))
 	a := strings.ToLower(strings.TrimSpace(actionName))
 
 	// --- If the target is NOT purrito ---
 	if t != "purrito" {
-		pt := strings.Title(target) // target capitalized
-		// Fun messages when players pet other players
+		pt := strings.Title(target)
 		otherRejects := []string{
 			fmt.Sprintf("%s, %s does not want to be pet.", player, pt),
 			fmt.Sprintf("%s, purrito looks confused… why are you petting %s?", player, pt),
@@ -124,24 +146,20 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 	// --- If target IS purrito ---
 	switch a {
 	case "pet", "love":
-		roll := rand.Intn(100) // 0–99
+		roll := rand.Intn(100)
 		if roll < 60 {
-			// ACCEPT (increase by 1)
 			ca.LoveMeter.Increase(player, 1)
-			return ca.acceptMessage(player)
+			return ca.acceptMessage(player) // will append bond progress
 		}
 
-		// REJECT (decrease by 1)
 		ca.LoveMeter.Decrease(player, 1)
-		return ca.rejectMessage(player)
+		return ca.rejectMessage(player) // will append bond progress (only if still bonded)
 
 	case "slap", "kick":
 		key := strings.ToLower(strings.TrimSpace(player))
 
-		// First time = warning only
 		if !ca.slapWarned[key] {
 			ca.slapWarned[key] = true
-
 			firstWarnings := []string{
 				fmt.Sprintf("😾 Purrito flattens his ears at %s... This is your warning... do not slap him again...", player),
 				fmt.Sprintf("⚠️ Purrito stares at %s with shocked eyes… he did not like that...", player),
@@ -152,7 +170,6 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			return firstWarnings[rand.Intn(len(firstWarnings))]
 		}
 
-		// Second+ times = punishment + love decrease
 		ca.LoveMeter.Decrease(player, 1)
 		love := ca.LoveMeter.Get(player)
 		mood := ca.LoveMeter.GetMood(player)
@@ -165,95 +182,87 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			fmt.Sprintf("😿 Purrito looks betrayed by %s. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 			fmt.Sprintf("😾 Purrito steps back from %s… do not hurt him. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 		}
-
+		// No bond progress for slap/kick (you only asked for pet/love/catnip/feed/laser)
 		return secondPunishments[rand.Intn(len(secondPunishments))]
 
-	// 🍣 FEED
 	case "feed":
-		foods := []string{
-			"salmon", "tuna", "sardines", "chicken", "kibble", "milk",
-			"fish snacks", "cream", "shrimp", "turkey", "beef",
-		}
+		foods := []string{"salmon", "tuna", "sardines", "chicken", "kibble", "milk", "fish snacks", "cream", "shrimp", "turkey", "beef"}
 		food := foods[rand.Intn(len(foods))]
 
 		roll := rand.Intn(100)
 		if roll < 60 {
-			// 60% accept, +1 love
 			ca.LoveMeter.Increase(player, 1)
-			return ca.feedAcceptMessage(player, food)
+			return ca.feedAcceptMessage(player, food) // will append bond progress
 		}
-		// 40% picky / reject, -1 love
 		ca.LoveMeter.Decrease(player, 1)
-		return ca.feedRejectMessage(player, food)
+		return ca.feedRejectMessage(player, food) // will append bond progress (only if still bonded)
 
-	// 📊 STATUS
 	case "status":
 		return ca.statusMessage(player)
 
-	// CATNIP
 	case "catnip":
-		return ca.catnipMessage(player)
+		return ca.catnipMessage(player) // will append bond progress inside
 
 	default:
 		return "purrito tilts its head, not sure what you mean 🐾"
 	}
 }
 
-// acceptMessage generates a happy response from purrito, with mood+bar
+// acceptMessage generates a happy response from purrito, with mood+bar (+ bond progress if bonded)
 func (ca *CatActions) acceptMessage(player string) string {
 	emote := emotes[rand.Intn(len(emotes))]
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
-	return fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s",
+
+	base := fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s",
 		emote, player, love, mood, bar)
+
+	return ca.appendBondProgress(player, base)
 }
 
-// rejectMessage generates a grumpy response, with mood+bar
+// rejectMessage generates a grumpy response, with mood+bar (+ bond progress if still bonded)
 func (ca *CatActions) rejectMessage(player string) string {
 	reject := rejects[rand.Intn(len(rejects))]
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
-	return fmt.Sprintf("purrito %s at %s and your love meter is now %d%% and purrito is now %s %s",
+
+	base := fmt.Sprintf("purrito %s at %s and your love meter is now %d%% and purrito is now %s %s",
 		reject, player, love, mood, bar)
+
+	return ca.appendBondProgress(player, base)
 }
 
-// feedAcceptMessage – happy food reaction
+// feedAcceptMessage – happy food reaction (+ bond progress)
 func (ca *CatActions) feedAcceptMessage(player, food string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	lines := []string{
-		fmt.Sprintf("😺 Purrito happily munches the %s you gave, %s! Your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
-		fmt.Sprintf("😻 Purrito devours the %s and purrs loudly at %s. Your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
-		fmt.Sprintf("🍣 Purrito LOVES the %s from %s. Your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
+		fmt.Sprintf("😺 Purrito happily munches the %s you gave, %s! Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("😻 Purrito devours the %s and purrs loudly at %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("🍣 Purrito LOVES the %s from %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 	}
-	return lines[rand.Intn(len(lines))]
+	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
 
-// feedRejectMessage – picky cat reaction
+// feedRejectMessage – picky cat reaction (+ bond progress if still bonded)
 func (ca *CatActions) feedRejectMessage(player, food string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	lines := []string{
-		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
-		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
-		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% and purrito is now %s %s",
-			food, player, love, mood, bar),
+		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 	}
-	return lines[rand.Intn(len(lines))]
+	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
 
-// statusMessage – show the player’s bond with Purrito
+// statusMessage – show the player’s bond with Purrito (NO bond progress here)
 func (ca *CatActions) statusMessage(player string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
@@ -263,20 +272,18 @@ func (ca *CatActions) statusMessage(player string) string {
 		player, love, mood, bar)
 }
 
-// catnipMessage handles !catnip purrito logic (once per day, 55% accept / 45% reject)
+// catnipMessage handles !catnip purrito logic (once per day, 70% accept / 30% reject)
 func (ca *CatActions) catnipMessage(player string) string {
 	key := strings.ToLower(strings.TrimSpace(player))
 	now := time.Now()
 
-	// ✅ once per day check
 	if last, ok := ca.catnipUsedAt[key]; ok && sameDayNY(last, now) {
 		return fmt.Sprintf("aww %s, you already used catnip today. Try again tomorrow...", player)
 	}
 	ca.catnipUsedAt[key] = now
 
-	roll := rand.Intn(100) // 0–99
+	roll := rand.Intn(100)
 
-	// ✅ 70% accept (0–69): big happy (+3)
 	if roll < 70 {
 		ca.LoveMeter.Increase(player, 3)
 		love := ca.LoveMeter.Get(player)
@@ -284,31 +291,24 @@ func (ca *CatActions) catnipMessage(player string) string {
 		bar := ca.LoveMeter.GetLoveBar(player)
 
 		variants := []string{
-			fmt.Sprintf("🌿😺 Purrito sniffs the catnip and flops over, rolling around happily at %s... your love meter is now %d%% and purrito is now %s %s",
-				player, love, mood, bar),
-			fmt.Sprintf("🌿😻 Purrito licks the catnip and goes into hyper-purr mode around %s... your love meter is now %d%% and purrito is now %s %s",
-				player, love, mood, bar),
-			fmt.Sprintf("🌿🐾 Purrito cuddles into the catnip near %s and purrs loudly... your love meter is now %d%% and purrito is now %s %s",
-				player, love, mood, bar),
+			fmt.Sprintf("🌿😺 Purrito sniffs the catnip and flops over, rolling around happily at %s... your love meter is now %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("🌿😻 Purrito licks the catnip and goes into hyper-purr mode around %s... your love meter is now %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("🌿🐾 Purrito cuddles into the catnip near %s and purrs loudly... your love meter is now %d%% and purrito is now %s %s", player, love, mood, bar),
 		}
-		return variants[rand.Intn(len(variants))]
+		return ca.appendBondProgress(player, variants[rand.Intn(len(variants))])
 	}
 
-	// ✅ 30% reject (70–99): overstimulated / picky (−1)
 	ca.LoveMeter.Decrease(player, 1)
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	variants := []string{
-		fmt.Sprintf("🌿🙀 Purrito gets overwhelmed by the catnip from %s and needs space. your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
-		fmt.Sprintf("🌿😾 Purrito sneezes and backs away from %s’s catnip... too strong! your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
-		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
+		fmt.Sprintf("🌿🙀 Purrito gets overwhelmed by the catnip from %s and needs space. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+		fmt.Sprintf("🌿😾 Purrito sneezes and backs away from %s’s catnip... too strong! your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 	}
-	return variants[rand.Intn(len(variants))]
+	return ca.appendBondProgress(player, variants[rand.Intn(len(variants))])
 }
 
 // GetActions returns all available cat actions
