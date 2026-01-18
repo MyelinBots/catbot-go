@@ -8,10 +8,9 @@ import (
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
-
-// Seed RNG once for the package
-func init() { rand.Seed(time.Now().UnixNano()) }
 
 type CatActionsImpl interface {
 	GetActions() []string
@@ -110,8 +109,7 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 
 	// --- If the target is NOT purrito ---
 	if t != "purrito" {
-		pt := strings.Title(target) // target capitalized
-		// Fun messages when players pet other players
+		pt := cases.Title(language.English).String(target)
 		otherRejects := []string{
 			fmt.Sprintf("%s, %s does not want to be pet.", player, pt),
 			fmt.Sprintf("%s, purrito looks confused… why are you petting %s?", player, pt),
@@ -205,6 +203,7 @@ func (ca *CatActions) acceptMessage(player string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
+
 	return fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s",
 		emote, player, love, mood, bar)
 }
@@ -215,6 +214,7 @@ func (ca *CatActions) rejectMessage(player string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
+
 	return fmt.Sprintf("purrito %s at %s and your love meter is now %d%% and purrito is now %s %s",
 		reject, player, love, mood, bar)
 }
@@ -301,12 +301,9 @@ func (ca *CatActions) catnipMessage(player string) string {
 	bar := ca.LoveMeter.GetLoveBar(player)
 
 	variants := []string{
-		fmt.Sprintf("🌿🙀 Purrito gets overwhelmed by the catnip from %s and needs space. your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
-		fmt.Sprintf("🌿😾 Purrito sneezes and backs away from %s’s catnip... too strong! your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
-		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s",
-			player, love, mood, bar),
+		fmt.Sprintf("🌿🙀 Purrito gets overwhelmed by the catnip from %s and needs space. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+		fmt.Sprintf("🌿😾 Purrito sneezes and backs away from %s's catnip... too strong! your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 	}
 	return variants[rand.Intn(len(variants))]
 }

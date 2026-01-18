@@ -12,10 +12,6 @@ import (
 	"github.com/MyelinBots/catbot-go/internal/services/context_manager"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 // --------------------------------------------------
 // Interfaces
 // --------------------------------------------------
