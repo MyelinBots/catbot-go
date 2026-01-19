@@ -41,6 +41,7 @@ func NewCommandController(gameinstance *catbot.CatBot) CommandController {
 // Core dispatcher
 // --------------------------------------------------
 
+// HandleCommand parses an IRC line and dispatches to the correct handler
 func (c *CommandControllerImpl) HandleCommand(ctx context.Context, line *irc.Line) error {
 	if len(line.Args) < 2 {
 		return nil
@@ -67,42 +68,6 @@ func (c *CommandControllerImpl) AddCommand(command string, handler func(ctx cont
 }
 
 // --------------------------------------------------
-// Shared helper: Bonded streak + BondPoints + Total
-// --------------------------------------------------
-func (c *CommandControllerImpl) appendBondProgress(ctx context.Context, nick string, msg string) string {
-	ca, ok := c.game.CatActions.(*cat_actions.CatActions)
-	if !ok || ca.LoveMeter == nil {
-		return msg
-	}
-
-	if ca.LoveMeter.Get(nick) != 100 {
-		return msg
-	}
-
-	pts, streak, err := ca.LoveMeter.RecordInteraction(ctx, nick)
-	if err != nil {
-		return msg
-	}
-
-	p, err := ca.CatPlayerRepo.GetPlayerByName(ctx, nick, ca.Network, ca.Channel)
-	total := 0
-	if err == nil && p != nil {
-		total = p.BondPoints
-	}
-
-	if pts > 0 {
-		return msg + fmt.Sprintf(
-			" :: Bonded streak: %d day(s) :: +%d BondPoints (Total: %d)",
-			streak, pts, total,
-		)
-	}
-
-	return msg + fmt.Sprintf(
-		" :: BondPoints already earned today (Total: %d)",
-		total,
-	)
-}
-
 // Handlers
 // --------------------------------------------------
 
@@ -129,53 +94,53 @@ func (c *CommandControllerImpl) PurritoLaserHandler() func(ctx context.Context, 
 		nick := context_manager.GetNickContext(ctx)
 
 		parts := strings.Fields(strings.TrimSpace(message))
+		// Expect: !laser purrito
 		if len(parts) < 2 || !strings.EqualFold(parts[0], "!laser") || !strings.EqualFold(parts[1], "purrito") {
 			return nil
 		}
 
-		// Must be present AND consume (vanish immediately)
+		// ✅ Same logic as !feed/!pet/!love: must be present AND consume (vanish immediately)
 		if !c.game.ConsumePresence() {
 			c.game.IrcClient.Privmsg(c.game.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
 			return nil
 		}
 
-		// LoveMeter comes from CatActions in your current wiring
+		// Need LoveMeter access for love/mood/bar
 		ca, ok := c.game.CatActions.(*cat_actions.CatActions)
 		if !ok || ca.LoveMeter == nil {
+			// Fallback: still respond without meter if something is miswired
 			c.game.IrcClient.Privmsg(c.game.Channel, "🔦⚡️ Purrito watches the laser dot carefully...")
 			return nil
 		}
 
-		roll := rand.Intn(100)
+		roll := rand.Intn(100) // 0–99
 
 		if roll < 60 {
 			// ACCEPT (+1 love)
 			ca.LoveMeter.Increase(nick, 1)
-
 			love := ca.LoveMeter.Get(nick)
 			mood := ca.LoveMeter.GetMood(nick)
 			bar := ca.LoveMeter.GetLoveBar(nick)
 
 			msg := acceptMoves[rand.Intn(len(acceptMoves))]
-			out := fmt.Sprintf("%s Your love meter is now %d%% and purrito is now %s %s", msg, love, mood, bar)
-
-			out = c.appendBondProgress(ctx, nick, out)
-			c.game.IrcClient.Privmsg(c.game.Channel, out)
+			c.game.IrcClient.Privmsg(
+				c.game.Channel,
+				fmt.Sprintf("%s Your love meter is now %d%% and purrito is now %s %s", msg, love, mood, bar),
+			)
 			return nil
 		}
 
 		// REJECT (-1 love)
 		ca.LoveMeter.Decrease(nick, 1)
-
 		love := ca.LoveMeter.Get(nick)
 		mood := ca.LoveMeter.GetMood(nick)
 		bar := ca.LoveMeter.GetLoveBar(nick)
 
 		msg := rejectMoves[rand.Intn(len(rejectMoves))]
-		out := fmt.Sprintf("%s Your love meter is now %d%% and purrito is now %s %s", msg, love, mood, bar)
-
-		out = c.appendBondProgress(ctx, nick, out)
-		c.game.IrcClient.Privmsg(c.game.Channel, out)
+		c.game.IrcClient.Privmsg(
+			c.game.Channel,
+			fmt.Sprintf("%s Your love meter is now %d%% and purrito is now %s %s", msg, love, mood, bar),
+		)
 		return nil
 	}
 }
