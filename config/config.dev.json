@@ -1,19 +1,17 @@
 {
-    "ircconfig": {
-        "host": "us.darkworld.network",
-        "port": 6697,
-        "ssl": true,
-        "nick": "testbot",
-        "channelsString": "#testing",
-        "network": "darkworld",
-        "nickservPassword": "iamthebest555",
-        "password": "purrito/darkworld:FD8vufTTeR4TXjM"
-    },
-    
-    "dbconfig": {
+  "ircconfig": {
+    "host": "irc.myelinbots.com",
+    "port": 6697,
+    "ssl": true,
+    "nick": "testbot",
+    "channelsString": "#lobby",
+    "network": "myelinbots"
+  },
+  "dbconfig": {
+    "user": "catbot",
     "host": "localhost",
     "port": 5433
-    }
+  }
 }
 
 
