@@ -15,7 +15,7 @@ MODEL
 */
 
 type CatPlayer struct {
-	ID        uint      `gorm:"column:id;primaryKey;autoIncrement" json:"id"` // ✅ MySQL friendly
+	ID        string    `gorm:"column:id;primaryKey;type:uuid;default:gen_random_uuid()" json:"id"`
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 
@@ -46,7 +46,7 @@ REPOSITORY INTERFACE
 */
 
 type CatPlayerRepository interface {
-	GetPlayerByID(ctx context.Context, id uint) (*CatPlayer, error)
+	GetPlayerByID(ctx context.Context, id string) (*CatPlayer, error)
 	GetPlayerByName(ctx context.Context, name, network, channel string) (*CatPlayer, error)
 	GetAllPlayers(ctx context.Context, network, channel string) ([]*CatPlayer, error)
 
@@ -96,7 +96,7 @@ func normScope(network, channel string) (string, string) {
 CRUD
 */
 
-func (r *CatPlayerRepositoryImpl) GetPlayerByID(ctx context.Context, id uint) (*CatPlayer, error) {
+func (r *CatPlayerRepositoryImpl) GetPlayerByID(ctx context.Context, id string) (*CatPlayer, error) {
 	var p CatPlayer
 	err := r.db.DB.WithContext(ctx).Where("id = ?", id).First(&p).Error
 	if err != nil {
