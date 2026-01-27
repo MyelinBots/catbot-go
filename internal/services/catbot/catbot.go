@@ -77,7 +77,7 @@ func NewCatBot(
 		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{180}, // 3 minutes
+		times:         []int{120}, // 2 minutes
 		CatPlayerRepo: catPlayerRepo,
 		BondPoints:    bondpoints.New(catPlayerRepo),
 	}
@@ -248,53 +248,67 @@ func (cb *CatBot) HandleRandomAction(ctx context.Context) {
 // --------------------------------------------------
 // Bonded helper (formatting + DB reads)
 // --------------------------------------------------
-
 func (cb *CatBot) appendBondProgress(ctx context.Context, nick string, msg string) string {
 	ca, ok := cb.CatActions.(*cat_actions.CatActions)
 	if !ok || ca.LoveMeter == nil {
 		return msg
 	}
 
-	// gate: must be bonded now
 	if ca.LoveMeter.Get(nick) != 100 {
 		return msg
 	}
 
-	// capture old highest before updating (for unlock-diff)
-	oldP, _ := cb.CatPlayerRepo.GetPlayerByName(ctx, nick, ca.Network, ca.Channel)
+	normalizedNick := strings.ToLower(strings.TrimSpace(nick))
+
+	oldP, _ := cb.CatPlayerRepo.GetPlayerByName(
+		ctx,
+		normalizedNick,
+		ca.Network,
+		ca.Channel,
+	)
 	oldHighest := 0
 	if oldP != nil {
 		oldHighest = oldP.HighestBondStreak
 	}
 
-	// record bondpoints (once per NY day). No "already earned today" message.
-	res, err := cb.BondPoints.RecordBondedInteraction(ctx, nick, ca.Network, ca.Channel)
+	res, err := cb.BondPoints.RecordBondedInteraction(
+		ctx,
+		normalizedNick,
+		ca.Network,
+		ca.Channel,
+	)
 	if err != nil {
 		return msg
 	}
 
-	// secret gifts unlock (based on HighestStreak progression)
 	unlocks := bondrewards.GiftUnlocks(oldHighest, res.HighestStreak)
 	if len(unlocks) > 0 {
 		mask := 0
 		for _, u := range unlocks {
 			mask |= u.GiftMask
 		}
-		_ = cb.CatPlayerRepo.AddGiftsUnlocked(ctx, nick, ca.Network, ca.Channel, mask)
+		_ = cb.CatPlayerRepo.AddGiftsUnlocked(
+			ctx,
+			normalizedNick,
+			ca.Network,
+			ca.Channel,
+			mask,
+		)
 
-		// show only the first unlocked name
-		msg += fmt.Sprintf(" | 🎁 %s unlocked", unlocks[0].GiftName)
+		msg += fmt.Sprintf(" :: 😸🎁 %s unlocked", unlocks[0].GiftName)
 	}
 
-	// cute title (mystical/pastel vibe)
 	title := bondrewards.TitleForHighestStreak(res.HighestStreak)
 
 	if res.AwardedPoints > 0 {
-		return msg + fmt.Sprintf(" | Streak: %d day(s) | +%d BondPoints | Total: %d | Title: %s",
+		return msg + fmt.Sprintf(
+			" :: Streak: %d day(s) :: +%d BondPoints :: Total: %d :: Title: %s",
 			res.Streak, res.AwardedPoints, res.TotalPoints, title,
 		)
 	}
-	return msg + fmt.Sprintf(" | Streak: %d day(s) | Total: %d | Title: %s",
+
+	return msg + fmt.Sprintf(
+		" :: Streak: %d day(s) :: already bonded today :: Total: %d :: Title: %s",
 		res.Streak, res.TotalPoints, title,
 	)
 }

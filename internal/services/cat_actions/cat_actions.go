@@ -1,7 +1,6 @@
 package cat_actions
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -9,28 +8,11 @@ import (
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
+	"github.com/MyelinBots/catbot-go/internal/services/bondpoints"
 	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
-
-type CatActionsImpl interface {
-	GetActions() []string
-	GetRandomAction() string
-	ExecuteAction(actionName, player, target string) string
-}
-
-type CatActions struct {
-	LoveMeter     lovemeter.LoveMeter
-	Actions       []string
-	CatPlayerRepo cat_player.CatPlayerRepository
-	Network       string
-	Channel       string
-
-	mu           sync.RWMutex
-	slapWarned   map[string]bool // track who already got a slap warning
-	catnipUsedAt map[string]time.Time
-}
 
 var emotes = []string{
 	"meows happily (=^･^=)",
@@ -74,63 +56,121 @@ var rejects = []string{
 	"swats the air and moves away (╬ΦᆺΦ)",
 	"gives a disdainful glance (Φ 皿 Φ)",
 	"turns its head away (￣ω￣;)",
-	"gives a sharp meow and walks off (＞﹏＜)",
 	"ignores you completely (－‸ლ)",
 	"gives a cold stare (ΦωΦ)",
 	"flicks its tail and walks away (￣^￣)",
 	"lets out an annoyed meow (｀皿´)ノ",
 }
 
-// NewCatActions returns a new instance of CatActions
+type CatActionsImpl interface {
+	GetActions() []string
+	GetRandomAction() string
+	ExecuteAction(actionName, player, target string) string
+	IsHere() bool
+}
+
+type CatActions struct {
+	LoveMeter     lovemeter.LoveMeter
+	Actions       []string
+	CatPlayerRepo cat_player.CatPlayerRepository
+	Network       string
+	Channel       string
+
+	mu           sync.RWMutex
+	slapWarned   map[string]bool
+	catnipUsedAt map[string]time.Time
+	BondPoints   bondpoints.Service
+
+	hereUntil time.Time
+}
+
 func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channel string) CatActionsImpl {
 	return &CatActions{
 		LoveMeter:     lovemeter.NewLoveMeter(catPlayerRepo, network, channel),
+		BondPoints:    bondpoints.New(catPlayerRepo),
 		Actions:       emotes,
 		CatPlayerRepo: catPlayerRepo,
 		Network:       network,
 		Channel:       channel,
-		slapWarned:    make(map[string]bool),
-		catnipUsedAt:  make(map[string]time.Time),
+
+		slapWarned:   make(map[string]bool),
+		catnipUsedAt: make(map[string]time.Time),
 	}
 }
 
-func sameDayNY(a, b time.Time) bool {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		loc = time.Local
-	}
-	aa := a.In(loc)
-	bb := b.In(loc)
-	return aa.Year() == bb.Year() && aa.YearDay() == bb.YearDay()
+func (ca *CatActions) GetActions() []string { return ca.Actions }
+
+func (ca *CatActions) GetRandomAction() string {
+	return ca.Actions[rand.Intn(len(ca.Actions))]
 }
 
-// appendBondProgress appends endgame info ONLY when user is bonded (love==100).
-func (ca *CatActions) appendBondProgress(player string, msg string) string {
-	if ca.LoveMeter == nil {
-		return msg
-	}
+func (ca *CatActions) appendBondProgress(_ string, msg string) string { return msg }
 
-	// IMPORTANT: call AFTER love has been increased/decreased.
-	pts, streak, err := ca.LoveMeter.RecordInteraction(context.Background(), player)
-	_ = err // optionally log
-
-	if ca.LoveMeter.Get(player) != 100 {
-		return msg
-	}
-
-	if pts > 0 {
-		return msg + fmt.Sprintf(" | Bonded streak: %d day(s) | +%d BondPoints", streak, pts)
-	}
-
-	return msg + fmt.Sprintf(" | Bonded streak: %d day(s) | BondPoints already earned today", streak)
+func (ca *CatActions) IsHere() bool {
+	ca.mu.RLock()
+	defer ca.mu.RUnlock()
+	return time.Now().Before(ca.hereUntil)
 }
 
-// ExecuteAction handles player actions toward purrito
+func (ca *CatActions) EnsureHere(forHowLong time.Duration) {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	now := time.Now()
+	until := now.Add(forHowLong)
+
+	// extend presence if already here
+	if until.After(ca.hereUntil) {
+		ca.hereUntil = until
+	}
+}
+
+// --------------------
+// Helpers
+// --------------------
+
+func normalizeAction(action string) string {
+	a := strings.ToLower(strings.TrimSpace(action))
+	return strings.TrimPrefix(a, "!")
+}
+
+// --------------------
+// Catnip cooldown (daily)
+// --------------------
+
+func (ca *CatActions) CatnipRemaining(player string) time.Duration {
+	key := normalizeNick(player)
+	now := time.Now()
+
+	ca.mu.RLock()
+	last := ca.catnipUsedAt[key]
+	ca.mu.RUnlock()
+
+	return remainingCatnip(now, last)
+}
+
+func (ca *CatActions) CatnipOnCooldown(player string) bool { return ca.CatnipRemaining(player) > 0 }
+
+// --------------------
+// Presence gate (YOUR RULE)
+// --------------------
+//
+// - catnip: ALWAYS allowed
+// - pet/love/feed/laser:
+//   - if purrito not here AND player already used catnip today -> BLOCK
+//   - else summon and allow
+func (ca *CatActions) gatePresenceForAction(action string) (bool, string) {
+	// ALL actions require purrito presence, including catnip
+	if !ca.IsHere() {
+		return false, "🐾 Purrito is not here right now. Wait until he shows up!"
+	}
+	return true, ""
+}
+
 func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
-	t := strings.ToLower(strings.TrimSpace(target))
-	a := strings.ToLower(strings.TrimSpace(actionName))
+	t := normalizeAction(target)
+	a := normalizeAction(actionName)
 
-	// --- If the target is NOT purrito ---
 	if t != "purrito" {
 		pt := cases.Title(language.English).String(target)
 		otherRejects := []string{
@@ -142,19 +182,53 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		return otherRejects[rand.Intn(len(otherRejects))]
 	}
 
-	// --- If target IS purrito ---
 	switch a {
 	case "pet", "love":
-		roll := rand.Intn(100)
-		if roll < 60 {
+		if ok, msg := ca.gatePresenceForAction(a); !ok {
+			return msg
+		}
+		if rand.Intn(100) < 95 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.acceptMessage(player)
 		}
-
 		ca.LoveMeter.Decrease(player, 1)
 		return ca.rejectMessage(player)
 
+	case "feed":
+		if ok, msg := ca.gatePresenceForAction(a); !ok {
+			return msg
+		}
+		foods := []string{"salmon", "tuna", "sardines", "chicken", "kibble", "milk", "fish snacks", "cream", "shrimp", "turkey", "beef"}
+		food := foods[rand.Intn(len(foods))]
+
+		if rand.Intn(100) < 60 {
+			ca.LoveMeter.Increase(player, 1)
+			return ca.feedAcceptMessage(player, food)
+		}
+		ca.LoveMeter.Decrease(player, 1)
+		return ca.feedRejectMessage(player, food)
+
+	case "laser":
+		if ok, msg := ca.gatePresenceForAction(a); !ok {
+			return msg
+		}
+		// no cooldown. handler may decorate.
+		return fmt.Sprintf("🔦⚡️ Purrito darts after the laser for %s!", player)
+
+	case "status":
+		return ca.statusMessage(player)
+
+	case "catnip":
+		if ok, msg := ca.gatePresenceForAction(a); !ok {
+			return msg
+		}
+
+		return ca.catnipMessage(player)
+
 	case "slap", "kick":
+		// (optional) if you want slap/kick to require presence too:
+		// if ok, msg := ca.requireHere(a); !ok { return msg }
+
 		key := strings.ToLower(strings.TrimSpace(player))
 
 		ca.mu.Lock()
@@ -189,30 +263,15 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		}
 		return secondPunishments[rand.Intn(len(secondPunishments))]
 
-	case "feed":
-		foods := []string{"salmon", "tuna", "sardines", "chicken", "kibble", "milk", "fish snacks", "cream", "shrimp", "turkey", "beef"}
-		food := foods[rand.Intn(len(foods))]
-
-		roll := rand.Intn(100)
-		if roll < 60 {
-			ca.LoveMeter.Increase(player, 1)
-			return ca.feedAcceptMessage(player, food)
-		}
-		ca.LoveMeter.Decrease(player, 1)
-		return ca.feedRejectMessage(player, food)
-
-	case "status":
-		return ca.statusMessage(player)
-
-	case "catnip":
-		return ca.catnipMessage(player)
-
 	default:
 		return "purrito tilts its head, not sure what you mean 🐾"
 	}
 }
 
-// acceptMessage generates a happy response from purrito, with mood+bar (+ bond progress if bonded)
+// --------------------
+// Messages (unchanged)
+// --------------------
+
 func (ca *CatActions) acceptMessage(player string) string {
 	emote := emotes[rand.Intn(len(emotes))]
 	love := ca.LoveMeter.Get(player)
@@ -225,7 +284,6 @@ func (ca *CatActions) acceptMessage(player string) string {
 	return ca.appendBondProgress(player, base)
 }
 
-// rejectMessage generates a grumpy response, with mood+bar (+ bond progress if still bonded)
 func (ca *CatActions) rejectMessage(player string) string {
 	reject := rejects[rand.Intn(len(rejects))]
 	love := ca.LoveMeter.Get(player)
@@ -238,7 +296,6 @@ func (ca *CatActions) rejectMessage(player string) string {
 	return ca.appendBondProgress(player, base)
 }
 
-// feedAcceptMessage – happy food reaction (+ bond progress)
 func (ca *CatActions) feedAcceptMessage(player, food string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
@@ -252,7 +309,6 @@ func (ca *CatActions) feedAcceptMessage(player, food string) string {
 	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
 
-// feedRejectMessage – picky cat reaction (+ bond progress if still bonded)
 func (ca *CatActions) feedRejectMessage(player, food string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
@@ -266,7 +322,6 @@ func (ca *CatActions) feedRejectMessage(player, food string) string {
 	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
 
-// statusMessage – show the player's bond with Purrito (NO bond progress here)
 func (ca *CatActions) statusMessage(player string) string {
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
@@ -276,23 +331,22 @@ func (ca *CatActions) statusMessage(player string) string {
 		player, love, mood, bar)
 }
 
-// catnipMessage handles !catnip purrito logic (once per day, 70% accept / 30% reject)
 func (ca *CatActions) catnipMessage(player string) string {
-	key := strings.ToLower(strings.TrimSpace(player))
+	key := normalizeNick(player)
 	now := time.Now()
 
 	ca.mu.Lock()
-	last, used := ca.catnipUsedAt[key]
-	if used && sameDayNY(last, now) {
+	last := ca.catnipUsedAt[key]
+	if rem := remainingCatnip(now, last); rem > 0 {
 		ca.mu.Unlock()
-		return fmt.Sprintf("aww %s, you already used catnip today. Try again tomorrow...", player)
+		return fmt.Sprintf("aww %s, you already used catnip today. Try again in %s.", player, formatRemaining(rem))
 	}
 	ca.catnipUsedAt[key] = now
 	ca.mu.Unlock()
 
-	roll := rand.Intn(100)
+	ca.EnsureHere(30 * time.Minute)
 
-	if roll < 70 {
+	if rand.Intn(100) < 70 {
 		ca.LoveMeter.Increase(player, 3)
 		love := ca.LoveMeter.Get(player)
 		mood := ca.LoveMeter.GetMood(player)
@@ -317,12 +371,4 @@ func (ca *CatActions) catnipMessage(player string) string {
 		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 	}
 	return ca.appendBondProgress(player, variants[rand.Intn(len(variants))])
-}
-
-// GetActions returns all available cat actions
-func (ca *CatActions) GetActions() []string { return ca.Actions }
-
-// GetRandomAction picks a random action from the list
-func (ca *CatActions) GetRandomAction() string {
-	return ca.Actions[rand.Intn(len(ca.Actions))]
 }

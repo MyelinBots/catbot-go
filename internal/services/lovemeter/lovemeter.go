@@ -118,14 +118,25 @@ func sameDay(a, b time.Time) bool {
 // --------------------------------------------------
 
 func (lm *LoveMeterImpl) persistLove(key string, love int) {
-	err := lm.catPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
-		Name:      key,
-		LoveMeter: love,
-		Network:   lm.Network,
-		Channel:   lm.Channel,
-	})
+	ctx := context.Background()
+
+	// ensure row exists (DO NOT overwrite other fields)
+	p, err := lm.catPlayerRepo.GetPlayerByName(ctx, key, lm.Network, lm.Channel)
 	if err != nil {
-		log.Printf("failed to persist love for %s: %v", key, err)
+		log.Printf("failed to load player %s: %v", key, err)
+		return
+	}
+	if p == nil {
+		_ = lm.catPlayerRepo.UpsertPlayer(ctx, &cat_player.CatPlayer{
+			Name:    key,
+			Network: lm.Network,
+			Channel: lm.Channel,
+		})
+	}
+
+	// update ONLY love_meter
+	if err := lm.catPlayerRepo.SetLoveMeter(ctx, key, lm.Network, lm.Channel, love); err != nil {
+		log.Printf("failed to set love for %s: %v", key, err)
 	}
 }
 

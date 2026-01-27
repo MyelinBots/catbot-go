@@ -12,7 +12,15 @@ func (c *CommandControllerImpl) PurritoHandler() func(ctx context.Context, args 
 
 		lines := []string{
 			"🐱 Hi " + nick + "! I am Purrito — your friendly IRC cat on the DarkWorld Network.",
-			"You can interact with me using commands:",
+			"",
+			"✨ = How the game works = ✨",
+			" * Pet, love, feed, catnip or laser with me to increase your Love Meter ❤️ (0–100%).",
+			" * Reach 100% ❤️✨ to become Bonded —> this unlocks daily BondPoints 🌙✨",
+			" * BondPoints are earned once per day while bonded (streaks give bonus points).",
+			" * If you ignore me for a day, your bond may slowly fade 😿",
+			" * Long bonding streaks unlock secret gifts and special titles 🎁",
+			"",
+			"🐾 = Commands you can use = 🐾",
 			" * !pet purrito :::: Pet me, maybe I will purr... or scratch! 🐾",
 			" * !love purrito :::: Show me some love... more love, more purrs 💗",
 			" * !feed purrito :::: Feed me some tasty treats 🍣 🍗 🍤 🍉",
@@ -20,8 +28,9 @@ func (c *CommandControllerImpl) PurritoHandler() func(ctx context.Context, args 
 			" * !catnip purrito :::: Give me some catnip to boost my mood 🌿😸",
 			" * !laser purrito :::: Find out when I was last seen chasing lasers 🔦⚡️",
 			" * !status purrito :::: Check your love percentage, mood, and love bar ❤️😽",
-			" * !purrito :::: Learn who I am and how the game works 🐱",
 			" * !toplove :::: See who I love the most 💖",
+			"",
+			"🌙 Tip: Come back every day to keep our bond strong and unlock rare rewards!",
 		}
 
 		for _, l := range lines {

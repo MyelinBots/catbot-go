@@ -68,6 +68,8 @@ type CatPlayerRepository interface {
 	// gifts (bitmask)
 	AddGiftsUnlocked(ctx context.Context, name, network, channel string, giftMask int) error
 	SetGiftsUnlocked(ctx context.Context, name, network, channel string, giftsUnlocked int) error
+
+	SetLoveMeter(ctx context.Context, nick, network, channel string, love int) error
 }
 
 /*
@@ -295,4 +297,14 @@ func (r *CatPlayerRepositoryImpl) SetGiftsUnlocked(ctx context.Context, name, ne
 		Model(&CatPlayer{}).
 		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
 		Update("gifts_unlocked", giftsUnlocked).Error
+}
+
+func (r *CatPlayerRepositoryImpl) SetLoveMeter(ctx context.Context, nick, network, channel string, love int) error {
+	nick = norm(nick)
+	network, channel = normScope(network, channel)
+
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", nick, network, channel).
+		Update("love_meter", love).Error
 }
