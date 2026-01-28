@@ -14,11 +14,10 @@ func InviteHandler(ircClient *irc.Conn) func(ctx context.Context, args ...string
 	return func(ctx context.Context, args ...string) error {
 		nick := context_manager.GetNickContext(ctx)
 
-		if len(args) < 1 || strings.ToLower(args[0]) != "purrito" {
-			return fmt.Errorf("usage: !invite purrito")
+		if len(args) < 2 || strings.ToLower(args[0]) != "purrito" {
+			return fmt.Errorf("usage: !invite purrito #channel")
 		}
 
-		// get line from args
 		channel := args[1]
 
 		ircClient.Join(channel)

@@ -12,5 +12,9 @@ func SetNickContext(ctx context.Context, nick string) context.Context {
 }
 
 func GetNickContext(ctx context.Context) string {
-	return ctx.Value(Nick{}).(string)
+	val, ok := ctx.Value(Nick{}).(string)
+	if !ok {
+		return ""
+	}
+	return val
 }

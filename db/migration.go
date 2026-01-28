@@ -38,6 +38,9 @@ func getMigration() (*migrate.Migrate, error) {
 		return nil, err
 	}
 	dbdriver, err := postgres.WithInstance(sqldb, &postgres.Config{})
+	if err != nil {
+		return nil, err
+	}
 	// log files in migrations folder
 	files, err := migrations.ReadDir("migrations")
 	if err != nil {

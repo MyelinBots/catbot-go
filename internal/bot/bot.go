@@ -77,7 +77,11 @@ func StartBot() error {
 		game := catbot.NewCatBot(conn, repo, cfg.IRCConfig.Network, channel)
 
 		// cast once เพื่อเรียก handler methods ได้ตรงๆ
-		cmds := commands.NewCommandController(game).(*commands.CommandControllerImpl)
+		cmdController := commands.NewCommandController(game)
+		cmds, ok := cmdController.(*commands.CommandControllerImpl)
+		if !ok {
+			return fmt.Errorf("failed to cast command controller")
+		}
 
 		// basic purrito commands -> game.HandleCatCommand (varargs) ต้อง adapt
 		cmds.AddCommand("!pet", adaptVarArgs(game.HandleCatCommand))
@@ -206,18 +210,15 @@ func StartBot() error {
 		// get cmds for this channel
 		gameInstances.Lock()
 		cmds, ok := gameInstances.commandInstances[channel]
-		gameInstances.Unlock()
-
 		if !ok {
-			gameInstances.Lock()
 			if err := initChannel(channel); err != nil {
 				gameInstances.Unlock()
 				fmt.Printf("Error lazy init channel %s: %v\n", channel, err)
 				return
 			}
 			cmds = gameInstances.commandInstances[channel]
-			gameInstances.Unlock()
 		}
+		gameInstances.Unlock()
 
 		if err := cmds.HandleCommand(ctx, line); err != nil {
 			fmt.Printf("Error handling command: %s\n", err.Error())
