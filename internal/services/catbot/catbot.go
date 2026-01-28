@@ -133,27 +133,19 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 	action := strings.ToLower(strings.TrimPrefix(parts[0], "!"))
 	target := parts[1]
 
-	needsPurritoPresent := map[string]bool{
+	// CatActions.ExecuteAction handles presence gating internally
+	// (catnip is allowed without presence; other actions require it)
+	response := cb.CatActions.ExecuteAction(action, nick, target)
+
+	// append bonded progress for actions targeting purrito
+	needsBondProgress := map[string]bool{
 		"pet":    true,
 		"love":   true,
 		"feed":   true,
 		"catnip": true,
 		"laser":  true,
 	}
-
-	// must be present AND consume (vanish immediately)
-	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
-		if !cb.ConsumePresence() {
-			cb.IrcClient.Privmsg(cb.Channel, "🐾 Purrito is not here right now. Wait until he shows up!")
-			return nil
-		}
-	}
-
-	// execute action -> message contains love/mood/bar already
-	response := cb.CatActions.ExecuteAction(action, nick, target)
-
-	// append bonded progress ONLY for: !pet !love !feed !catnip !laser (target purrito)
-	if needsPurritoPresent[action] && strings.EqualFold(target, "purrito") {
+	if needsBondProgress[action] && strings.EqualFold(target, "purrito") {
 		response = cb.appendBondProgress(ctx, nick, response)
 	}
 
@@ -218,6 +210,11 @@ func (cb *CatBot) HandleRandomAction(ctx context.Context) {
 
 	now := time.Now()
 
+	// Sync presence with CatActions
+	if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
+		ca.EnsureHere(presenceDuration)
+	}
+
 	cb.mu.Lock()
 	cb.lastAppear = now
 	cb.presentUntil = now.Add(presenceDuration)
@@ -235,10 +232,15 @@ func (cb *CatBot) HandleRandomAction(ctx context.Context) {
 		case <-timer.C:
 			cb.mu.RLock()
 			stillSame := cb.appearedAt.Equal(appearTime)
-			quiet := !cb.interacted
 			cb.mu.RUnlock()
 
-			if stillSame && quiet {
+			// Check if Purrito is still here via CatActions
+			stillHere := false
+			if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
+				stillHere = ca.IsHere()
+			}
+
+			if stillSame && !stillHere {
 				cb.IrcClient.Privmsg(cb.Channel, "(=^‥^=)っ stretches, yawns, and wanders off into the shadows 🐾")
 			}
 		}
@@ -248,6 +250,14 @@ func (cb *CatBot) HandleRandomAction(ctx context.Context) {
 // --------------------------------------------------
 // Bonded helper (formatting + DB reads)
 // --------------------------------------------------
+
+// normalizeNick strips IRC prefixes and lowercases the nick
+func normalizeNick(s string) string {
+	n := strings.ToLower(strings.TrimSpace(s))
+	n = strings.TrimLeft(n, "~&@%+")
+	return n
+}
+
 func (cb *CatBot) appendBondProgress(ctx context.Context, nick string, msg string) string {
 	ca, ok := cb.CatActions.(*cat_actions.CatActions)
 	if !ok || ca.LoveMeter == nil {
@@ -258,7 +268,7 @@ func (cb *CatBot) appendBondProgress(ctx context.Context, nick string, msg strin
 		return msg
 	}
 
-	normalizedNick := strings.ToLower(strings.TrimSpace(nick))
+	normalizedNick := normalizeNick(nick)
 
 	oldP, _ := cb.CatPlayerRepo.GetPlayerByName(
 		ctx,

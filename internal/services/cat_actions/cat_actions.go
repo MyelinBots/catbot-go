@@ -152,15 +152,12 @@ func (ca *CatActions) CatnipRemaining(player string) time.Duration {
 func (ca *CatActions) CatnipOnCooldown(player string) bool { return ca.CatnipRemaining(player) > 0 }
 
 // --------------------
-// Presence gate (YOUR RULE)
+// Presence gate
 // --------------------
 //
-// - catnip: ALWAYS allowed
-// - pet/love/feed/laser:
-//   - if purrito not here AND player already used catnip today -> BLOCK
-//   - else summon and allow
+// All actions (pet, love, feed, laser, catnip) require Purrito to be present.
 func (ca *CatActions) gatePresenceForAction(action string) (bool, string) {
-	// ALL actions require purrito presence, including catnip
+	// all actions require presence
 	if !ca.IsHere() {
 		return false, "🐾 Purrito is not here right now. Wait until he shows up!"
 	}
@@ -212,8 +209,13 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
-		// no cooldown. handler may decorate.
-		return fmt.Sprintf("🔦⚡️ Purrito darts after the laser for %s!", player)
+		// 60% accept, 40% reject - love change happens here
+		if rand.Intn(100) < 60 {
+			ca.LoveMeter.Increase(player, 1)
+			return ca.laserAcceptMessage(player)
+		}
+		ca.LoveMeter.Decrease(player, 1)
+		return ca.laserRejectMessage(player)
 
 	case "status":
 		return ca.statusMessage(player)
@@ -318,6 +320,36 @@ func (ca *CatActions) feedRejectMessage(player, food string) string {
 		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+	}
+	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
+}
+
+func (ca *CatActions) laserAcceptMessage(player string) string {
+	love := ca.LoveMeter.Get(player)
+	mood := ca.LoveMeter.GetMood(player)
+	bar := ca.LoveMeter.GetLoveBar(player)
+
+	lines := []string{
+		fmt.Sprintf("🔦⚡️ The laser flickers! Purrito darts after it, paws flying everywhere! Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦⚡️ Purrito spots the laser and wiggles... then pounces! Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦⚡️ Purrito chases the laser dot in circles... dizzy but happy! Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦⚡️ Purrito dives at the laser, misses, then looks proud anyway. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦⚡️ The red dot dances... Purrito bats at it with lightning speed! Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+	}
+	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
+}
+
+func (ca *CatActions) laserRejectMessage(player string) string {
+	love := ca.LoveMeter.Get(player)
+	mood := ca.LoveMeter.GetMood(player)
+	bar := ca.LoveMeter.GetLoveBar(player)
+
+	lines := []string{
+		fmt.Sprintf("🔦😾 Purrito narrows his eyes... not impressed by the laser right now. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦🙄 Purrito ignores the dot and grooms his paw instead. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦😿 Purrito flops down... too tired to chase today. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦😼 Purrito watches... then turns away like it's beneath him. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
+		fmt.Sprintf("🔦😾 Purrito swishes his tail in annoyance and refuses to play. Your love meter is now %d%% and purrito is now %s %s", love, mood, bar),
 	}
 	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
