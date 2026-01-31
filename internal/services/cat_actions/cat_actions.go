@@ -81,11 +81,20 @@ type CatActions struct {
 	catnipUsedAt map[string]time.Time
 	BondPoints   bondpoints.Service
 
-	hereUntil time.Time
+	// spawn session
+	presentUntil time.Time
+	nextSpawnAt  time.Time
+
+	minRespawn  time.Duration
+	maxRespawn  time.Duration
+	spawnWindow time.Duration
+
+	lastLeaveMsg string
+	lastSpawnMsg string
 }
 
 func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channel string) CatActionsImpl {
-	return &CatActions{
+	ca := &CatActions{
 		LoveMeter:     lovemeter.NewLoveMeter(catPlayerRepo, network, channel),
 		BondPoints:    bondpoints.New(catPlayerRepo),
 		Actions:       emotes,
@@ -95,8 +104,22 @@ func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channe
 
 		slapWarned:   make(map[string]bool),
 		catnipUsedAt: make(map[string]time.Time),
+
+		minRespawn:  20 * time.Minute, // minimum time between spawns
+		maxRespawn:  20 * time.Minute, // maximum time between spawns
+		spawnWindow: 10 * time.Minute, // present for 10  minutes
 	}
+
+	// Start present immediately
+	now := time.Now()
+	ca.presentUntil = now.Add(ca.spawnWindow)
+
+	return ca
 }
+
+// --------------------
+// Basic
+// --------------------
 
 func (ca *CatActions) GetActions() []string { return ca.Actions }
 
@@ -106,25 +129,6 @@ func (ca *CatActions) GetRandomAction() string {
 
 func (ca *CatActions) appendBondProgress(_ string, msg string) string { return msg }
 
-func (ca *CatActions) IsHere() bool {
-	ca.mu.RLock()
-	defer ca.mu.RUnlock()
-	return time.Now().Before(ca.hereUntil)
-}
-
-func (ca *CatActions) EnsureHere(forHowLong time.Duration) {
-	ca.mu.Lock()
-	defer ca.mu.Unlock()
-
-	now := time.Now()
-	until := now.Add(forHowLong)
-
-	// extend presence if already here
-	if until.After(ca.hereUntil) {
-		ca.hereUntil = until
-	}
-}
-
 // --------------------
 // Helpers
 // --------------------
@@ -132,6 +136,143 @@ func (ca *CatActions) EnsureHere(forHowLong time.Duration) {
 func normalizeAction(action string) string {
 	a := strings.ToLower(strings.TrimSpace(action))
 	return strings.TrimPrefix(a, "!")
+}
+
+func formatWait(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	sec := int(d.Seconds())
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	min := sec / 60
+	sec = sec % 60
+	if min < 60 {
+		return fmt.Sprintf("%dm %ds", min, sec)
+	}
+	hr := min / 60
+	min = min % 60
+	return fmt.Sprintf("%dh %dm", hr, min)
+}
+
+func misuseMessage(player, action, target string) string {
+	pt := cases.Title(language.English).String(target)
+
+	// Special: slap misuse => cat retaliates
+	if action == "slap" {
+		lines := []string{
+			fmt.Sprintf("😾 *scratches %s's face hardly* Why did you slap %s?", player, pt),
+			fmt.Sprintf("😼 *hisses and swats %s* Don’t slap %s", player, pt),
+			fmt.Sprintf("🐾 *claws %s* I did not like you slapping %s", player, pt),
+			fmt.Sprintf("😿 *bites %s lightly* Why would you slap %s?", player, pt),
+		}
+		return lines[rand.Intn(len(lines))]
+	}
+
+	// Optional: kick misuse => cat retaliates
+	if action == "kick" {
+		lines := []string{
+			fmt.Sprintf("😾 *lunges at %s* Don’t kick %s!", player, pt),
+			fmt.Sprintf("🐾 *scratches %s’s leg* Kicking %s is not okay :()", player, pt),
+			fmt.Sprintf("😼 *hisses at %s* Why would you kick %s?", player, pt),
+			fmt.Sprintf("😿 *bites %s’s ankle* Kicking %s made me sad...", player, pt),
+		}
+		return lines[rand.Intn(len(lines))]
+	}
+
+	// Generic misuse for all other commands
+	verb := action + "ing"
+	switch action {
+	case "pet":
+		verb = "petting"
+	case "love":
+		verb = "loving"
+	case "feed":
+		verb = "feeding"
+	case "laser":
+		verb = "using the laser on"
+	case "catnip":
+		verb = "giving catnip to"
+	}
+
+	lines := []string{
+		fmt.Sprintf("😼 Purrito tilts his head… why are you %s %s? ... you have to -> !%s purrito", verb, pt, action),
+		fmt.Sprintf("😼 Purrito ignores that. %s is not purrito.,, You have to -> !%s purrito", pt, action),
+		fmt.Sprintf("🐾 Wrong target, %s... You have to -> !%s purrito", player, action),
+		fmt.Sprintf("😿 Purrito seems confused... You have to -> !%s purrito", action),
+	}
+	return lines[rand.Intn(len(lines))]
+}
+
+// --------------------
+// Spawn / Presence
+// --------------------
+
+func (ca *CatActions) IsHere() bool {
+	now := time.Now()
+
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	// present expired => despawn + schedule respawn (timeout leave)
+	if !ca.presentUntil.IsZero() && now.After(ca.presentUntil) {
+		ca.lastLeaveMsg = timeoutLeaveMessage() // ✅ now it's used
+		ca.despawnLocked(now)
+	}
+
+	// not present but respawn time reached => spawn again
+	if ca.presentUntil.IsZero() && !ca.nextSpawnAt.IsZero() && !now.Before(ca.nextSpawnAt) {
+		ca.presentUntil = now.Add(ca.spawnWindow)
+
+		// ✅ ตั้งข้อความ "โผล่" แค่ครั้งเดียวต่อรอบ
+		emote := emotes[rand.Intn(len(emotes))]
+		ca.lastSpawnMsg = fmt.Sprintf("🐈 meowww ... %s", emote)
+	}
+
+	return !ca.presentUntil.IsZero() && now.Before(ca.presentUntil)
+}
+
+// EnsureHere is kept for backward compatibility (catbot.go still calls it).
+// With the "one interaction per spawn" system, we DO NOT want callers to keep
+// Purrito permanently present.
+//
+// EnsureHere only spawns Purrito if he is not present AND there is no pending spawn timer.
+// If he is present, it does nothing (does NOT extend the window).
+func (ca *CatActions) EnsureHere(forHowLong time.Duration) {
+	now := time.Now()
+
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	// If already present, do not extend (prevents "always here" behavior)
+	if !ca.presentUntil.IsZero() && now.Before(ca.presentUntil) {
+		return
+	}
+
+	// If there is a future spawn scheduled, respect it
+	if !ca.nextSpawnAt.IsZero() && now.Before(ca.nextSpawnAt) {
+		return
+	}
+
+	// Spawn now for at most forHowLong, but cap to ca.spawnWindow to keep gameplay consistent
+	window := forHowLong
+	if window <= 0 || window > ca.spawnWindow {
+		window = ca.spawnWindow
+	}
+
+	ca.presentUntil = now.Add(window)
+	ca.nextSpawnAt = time.Time{}
+}
+
+func (ca *CatActions) despawnLocked(now time.Time) {
+	ca.presentUntil = time.Time{}
+
+	delay := ca.minRespawn
+	if ca.maxRespawn > ca.minRespawn {
+		delay = ca.minRespawn + time.Duration(rand.Int63n(int64(ca.maxRespawn-ca.minRespawn)))
+	}
+	ca.nextSpawnAt = now.Add(delay)
 }
 
 // --------------------
@@ -154,29 +295,61 @@ func (ca *CatActions) CatnipOnCooldown(player string) bool { return ca.CatnipRem
 // --------------------
 // Presence gate
 // --------------------
+
+//func (ca *CatActions) gatePresenceForAction(_ string) (bool, string) {
+//	if ca.IsHere() {
+//		return true, ""
+//	}
 //
-// All actions (pet, love, feed, laser, catnip) require Purrito to be present.
-func (ca *CatActions) gatePresenceForAction(action string) (bool, string) {
-	// all actions require presence
-	if !ca.IsHere() {
-		return false, "🐾 Purrito is not here right now. Wait until he shows up!"
+//	ca.mu.RLock()
+//	next := ca.nextSpawnAt
+//	ca.mu.RUnlock()
+//
+//	wait := time.Duration(0)
+//	if !next.IsZero() {
+//		wait = time.Until(next)
+//	}
+//
+//	return false, fmt.Sprintf("🐾 Purrito is not here right now... try again in %s!", formatWait(wait))
+//}
+// --------------------
+// Main Execute
+// --------------------
+
+func (ca *CatActions) gatePresenceForAction(_ string) (bool, string) {
+	// if he just left because of timeout, show that message once
+	if msg := ca.PopLeaveMessage(); msg != "" {
+		return false, msg
 	}
-	return true, ""
+
+	if ca.IsHere() {
+		return true, ""
+	}
+
+	ca.mu.RLock()
+	next := ca.nextSpawnAt
+	ca.mu.RUnlock()
+
+	wait := time.Duration(0)
+	if !next.IsZero() {
+		wait = time.Until(next)
+	}
+
+	return false, fmt.Sprintf("🐾 Purrito is not here right now... he will be back in %s...", formatWait(wait))
 }
 
 func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 	t := normalizeAction(target)
 	a := normalizeAction(actionName)
 
+	// status can be used without targeting purrito (optional rule)
+	if a == "status" {
+		return ca.statusMessage(player)
+	}
+
+	// all other commands must target purrito
 	if t != "purrito" {
-		pt := cases.Title(language.English).String(target)
-		otherRejects := []string{
-			fmt.Sprintf("%s, %s does not want to be pet.", player, pt),
-			fmt.Sprintf("%s, purrito looks confused… why are you petting %s?", player, pt),
-			fmt.Sprintf("%s, purrito meows awkwardly. Only purrito likes being pet not %s...", player, pt),
-			fmt.Sprintf("%s, %s is not interested in being pet… purrito is waiting!", player, pt),
-		}
-		return otherRejects[rand.Intn(len(otherRejects))]
+		return misuseMessage(player, a, target)
 	}
 
 	switch a {
@@ -184,10 +357,12 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
-		if rand.Intn(100) < 95 {
+
+		if rand.Intn(100) < 60 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.acceptMessage(player)
 		}
+
 		ca.LoveMeter.Decrease(player, 1)
 		return ca.rejectMessage(player)
 
@@ -195,13 +370,19 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
-		foods := []string{"salmon", "tuna", "sardines", "chicken", "kibble", "milk", "fish snacks", "cream", "shrimp", "turkey", "beef"}
+
+		foods := []string{
+			"salmon", "tuna", "sardines", "chicken", "kibble", "milk",
+			"fish snacks", "cream", "shrimp", "turkey", "beef", "cat treats",
+			"catnip-infused snacks",
+		}
 		food := foods[rand.Intn(len(foods))]
 
 		if rand.Intn(100) < 60 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.feedAcceptMessage(player, food)
 		}
+
 		ca.LoveMeter.Decrease(player, 1)
 		return ca.feedRejectMessage(player, food)
 
@@ -209,27 +390,31 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
-		// 60% accept, 40% reject - love change happens here
+
 		if rand.Intn(100) < 60 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.laserAcceptMessage(player)
 		}
+
 		ca.LoveMeter.Decrease(player, 1)
 		return ca.laserRejectMessage(player)
-
-	case "status":
-		return ca.statusMessage(player)
 
 	case "catnip":
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
 
+		// cooldown => do NOT despawn, do NOT count as a leave
+		if ca.CatnipOnCooldown(player) {
+			rem := ca.CatnipRemaining(player)
+			return fmt.Sprintf("aww %s, you already used catnip today. Try again in %s", player, formatRemaining(rem))
+		}
+
+		// allowed catnip => still does NOT despawn (he stays for full 10 minutes)
 		return ca.catnipMessage(player)
 
 	case "slap", "kick":
-		// (optional) if you want slap/kick to require presence too:
-		// if ok, msg := ca.requireHere(a); !ok { return msg }
+		// slap/kick does not require presence by default (but still must target purrito)
 
 		key := strings.ToLower(strings.TrimSpace(player))
 
@@ -244,8 +429,8 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			firstWarnings := []string{
 				fmt.Sprintf("😾 Purrito flattens his ears at %s... This is your warning... do not slap him again...", player),
 				fmt.Sprintf("⚠️ Purrito stares at %s with shocked eyes… he did not like that...", player),
-				fmt.Sprintf("😿 Purrito backs away from %s… please be gentle with him.", player),
-				fmt.Sprintf("⚠️ Purrito watches %s carefully… one more slap and he will be upset.", player),
+				fmt.Sprintf("😿 Purrito backs away from %s… please be gentle with him", player),
+				fmt.Sprintf("⚠️ Purrito watches %s carefully… one more slap and he will be upset", player),
 				fmt.Sprintf("😼 Purrito lifts a paw at %s in warning… do not try that again...", player),
 			}
 			return firstWarnings[rand.Intn(len(firstWarnings))]
@@ -266,12 +451,12 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		return secondPunishments[rand.Intn(len(secondPunishments))]
 
 	default:
-		return "purrito tilts its head, not sure what you mean 🐾"
+		return "purrito tilts its head, don't know what you mean 🐾"
 	}
 }
 
 // --------------------
-// Messages (unchanged)
+// Messages
 // --------------------
 
 func (ca *CatActions) acceptMessage(player string) string {
@@ -280,9 +465,7 @@ func (ca *CatActions) acceptMessage(player string) string {
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	base := fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s",
-		emote, player, love, mood, bar)
-
+	base := fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s", emote, player, love, mood, bar)
 	return ca.appendBondProgress(player, base)
 }
 
@@ -292,9 +475,7 @@ func (ca *CatActions) rejectMessage(player string) string {
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	base := fmt.Sprintf("purrito %s at %s and your love meter is now %d%% and purrito is now %s %s",
-		reject, player, love, mood, bar)
-
+	base := fmt.Sprintf("purrito %s at %s and your love meter is now %d%% and purrito is now %s %s", reject, player, love, mood, bar)
 	return ca.appendBondProgress(player, base)
 }
 
@@ -307,6 +488,7 @@ func (ca *CatActions) feedAcceptMessage(player, food string) string {
 		fmt.Sprintf("😺 Purrito happily munches the %s you gave, %s! Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("😻 Purrito devours the %s and purrs loudly at %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("🍣 Purrito LOVES the %s from %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("😸 Purrito licks his lips after eating the %s from %s! Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 	}
 	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
@@ -320,6 +502,7 @@ func (ca *CatActions) feedRejectMessage(player, food string) string {
 		fmt.Sprintf("😼 Purrito sniffs the %s from %s and turns away... your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("😾 Purrito refuses the %s. %s, he is a picky cat. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 		fmt.Sprintf("🙀 Purrito looks offended by the %s from %s. Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
+		fmt.Sprintf("😿 Purrito walks away from the %s offered by %s... Your love meter is now %d%% and purrito is now %s %s", food, player, love, mood, bar),
 	}
 	return ca.appendBondProgress(player, lines[rand.Intn(len(lines))])
 }
@@ -359,24 +542,17 @@ func (ca *CatActions) statusMessage(player string) string {
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	return fmt.Sprintf("Purrito status for %s and your love meter is %d%% and purrito is now %s %s",
-		player, love, mood, bar)
+	return fmt.Sprintf("Purrito status for %s and your love meter is %d%% and purrito is now %s %s", player, love, mood, bar)
 }
 
+// catnipMessage assumes cooldown was checked BEFORE calling it.
 func (ca *CatActions) catnipMessage(player string) string {
 	key := normalizeNick(player)
 	now := time.Now()
 
 	ca.mu.Lock()
-	last := ca.catnipUsedAt[key]
-	if rem := remainingCatnip(now, last); rem > 0 {
-		ca.mu.Unlock()
-		return fmt.Sprintf("aww %s, you already used catnip today. Try again in %s.", player, formatRemaining(rem))
-	}
 	ca.catnipUsedAt[key] = now
 	ca.mu.Unlock()
-
-	ca.EnsureHere(30 * time.Minute)
 
 	if rand.Intn(100) < 70 {
 		ca.LoveMeter.Increase(player, 3)
@@ -403,4 +579,50 @@ func (ca *CatActions) catnipMessage(player string) string {
 		fmt.Sprintf("🌿😿 Purrito looks displeased with the catnip from %s and walks off... your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 	}
 	return ca.appendBondProgress(player, variants[rand.Intn(len(variants))])
+}
+
+// timeoutLeaveMessage returns a message when Purrito leaves because he stayed
+// for the full spawnWindow (timeout) and nobody interacted.
+func timeoutLeaveMessage() string {
+	lines := []string{
+		"(=^‥^=)っ ...looks around… no one came. He quietly walks away...",
+		"(=^‥^=)っ ...stretches, yawns, and wanders off...",
+		"(=^‥^=)っ ...blinks slowly… then disappears into the night...",
+		"(=^‥^=)っ ...waits patiently… then gives up and leaves...",
+		"(=^‥^=)っ ...decides to explore somewhere else and slips away...",
+		"(=^‥^=)っ ...flicks his tail, bored of waiting, and walks off...",
+		"(=^‥^=)っ ...pads away softly… you barely notice he’s gone...",
+		"(=^‥^=)っ ...hops onto a fence and vanishes...",
+		"(=^‥^=)っ ...Time’s up… Purrito got tired of waiting and left...",
+	}
+	return lines[rand.Intn(len(lines))]
+}
+
+// PopLeaveMessage returns the timeout leave message once (then clears it).
+func (ca *CatActions) PopLeaveMessage() string {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	msg := ca.lastLeaveMsg
+	ca.lastLeaveMsg = ""
+	return msg
+}
+
+func (ca *CatActions) PopSpawnMessage() string {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	msg := ca.lastSpawnMsg
+	ca.lastSpawnMsg = ""
+	return msg
+}
+
+func (ca *CatActions) TickPresence() (spawnMsg string, leaveMsg string) {
+	// อัปเดตสถานะ (จะทำให้เกิด spawn/despawn ตามเวลา)
+	_ = ca.IsHere()
+
+	// ถ้ามี spawn/leave message ใหม่ ให้ดึงออกมา (ครั้งเดียว)
+	spawnMsg = ca.PopSpawnMessage()
+	leaveMsg = ca.PopLeaveMessage()
+	return
 }

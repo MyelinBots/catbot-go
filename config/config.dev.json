@@ -1,11 +1,11 @@
 {
   "ircconfig": {
-    "host": "irc.myelinbots.com",
+    "host": "us.darkworld.network",
     "port": 6697,
     "ssl": true,
     "nick": "testbot",
-    "channelsString": "#lobby",
-    "network": "myelinbots"
+    "channelsString": "#testing",
+    "network": "darkworld"
   },
   "dbconfig": {
     "user": "catbot",

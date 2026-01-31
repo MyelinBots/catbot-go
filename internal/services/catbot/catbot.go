@@ -205,46 +205,28 @@ func (cb *CatBot) Start(ctx context.Context) {
 // --------------------------------------------------
 
 func (cb *CatBot) HandleRandomAction(ctx context.Context) {
-	action := cb.CatActions.GetRandomAction()
-	cb.IrcClient.Privmsg(cb.Channel, "🐈 meowww ... "+action)
-
-	now := time.Now()
-
-	// Sync presence with CatActions
-	if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
-		ca.EnsureHere(presenceDuration)
+	ca, ok := cb.CatActions.(*cat_actions.CatActions)
+	if !ok {
+		return
 	}
 
-	cb.mu.Lock()
-	cb.lastAppear = now
-	cb.presentUntil = now.Add(presenceDuration)
-	cb.appearedAt = now
-	cb.interacted = false
-	cb.mu.Unlock()
+	// 1) force CatActions to update state (timeout check)
+	here := ca.IsHere()
 
-	go func(appearTime time.Time) {
-		timer := time.NewTimer(presenceDuration)
-		defer timer.Stop()
+	// 2) show timeout leave message ONCE
+	if msg := ca.PopLeaveMessage(); msg != "" {
+		cb.IrcClient.Privmsg(cb.Channel, msg)
+		return
+	}
 
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			cb.mu.RLock()
-			stillSame := cb.appearedAt.Equal(appearTime)
-			cb.mu.RUnlock()
+	// 3) if not here, do nothing
+	if !here {
+		return
+	}
 
-			// Check if Purrito is still here via CatActions
-			stillHere := false
-			if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
-				stillHere = ca.IsHere()
-			}
-
-			if stillSame && !stillHere {
-				cb.IrcClient.Privmsg(cb.Channel, "(=^‥^=)っ stretches, yawns, and wanders off into the shadows 🐾")
-			}
-		}
-	}(now)
+	// 4) ambient emote only when present
+	action := ca.GetRandomAction()
+	cb.IrcClient.Privmsg(cb.Channel, "🐈 meowww ... "+action)
 }
 
 // --------------------------------------------------
