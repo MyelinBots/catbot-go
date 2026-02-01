@@ -105,9 +105,9 @@ func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channe
 		slapWarned:   make(map[string]bool),
 		catnipUsedAt: make(map[string]time.Time),
 
-		minRespawn:  20 * time.Minute, // minimum time between spawns
-		maxRespawn:  20 * time.Minute, // maximum time between spawns
-		spawnWindow: 10 * time.Minute, // present for 10  minutes
+		minRespawn:  30 * time.Minute, // minimum time between spawns
+		maxRespawn:  30 * time.Minute, // maximum time between spawns
+		spawnWindow: 30 * time.Minute, // present for 30 minutes
 	}
 
 	// Start present immediately
