@@ -264,17 +264,17 @@ func TestHandleRandomAction_SyncsCatActionsPresence(t *testing.T) {
 
 	ctx := context.Background()
 
-	// CatActions should not be "here" initially
+	// CatActions starts present
 	ca := cb.CatActions.(*cat_actions.CatActions)
-	if ca.IsHere() {
-		t.Error("CatActions should not be here initially")
+	if !ca.IsHere() {
+		t.Error("CatActions should be here initially")
 	}
 
 	cb.HandleRandomAction(ctx)
 
-	// Now CatActions should be "here"
+	// CatActions should still be here after HandleRandomAction
 	if !ca.IsHere() {
-		t.Error("CatActions should be here after HandleRandomAction")
+		t.Error("CatActions should still be here after HandleRandomAction")
 	}
 }
 
@@ -320,6 +320,10 @@ func TestHandleCatCommand_PetWhenNotHere(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
 	cb := NewCatBot(client, repo, "testnet", "#testchan")
+
+	// Force Purrito to be absent
+	ca := cb.CatActions.(*cat_actions.CatActions)
+	ca.ForceAbsent()
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -632,8 +636,7 @@ func TestHandleCatCommand_BondedPlayer(t *testing.T) {
 		LoveMeter: 100,
 	})
 
-	ca := cb.CatActions.(*cat_actions.CatActions)
-	ca.EnsureHere(5 * time.Minute)
+	// Purrito starts present (no need for EnsureHere)
 
 	ctx = context_manager.SetNickContext(ctx, "player1")
 
@@ -643,9 +646,16 @@ func TestHandleCatCommand_BondedPlayer(t *testing.T) {
 	}
 
 	msg := client.LastMessage()
-	// Should include bond progress for bonded player
-	if !strings.Contains(msg, "Streak") || !strings.Contains(msg, "BondPoints") {
-		t.Errorf("expected bond progress for bonded player, got %q", msg)
+	// Pet has 60% accept / 40% reject due to randomness.
+	// On accept: love stays at 100 (capped), bond progress is appended.
+	// On reject: love drops to 99, bond progress is skipped.
+	if strings.Contains(msg, "not here") {
+		t.Errorf("should not get 'not here' when purrito is present, got %q", msg)
+	}
+	if strings.Contains(msg, "100%") {
+		if !strings.Contains(msg, "Streak") || !strings.Contains(msg, "BondPoints") {
+			t.Errorf("expected bond progress when love is still 100%%, got %q", msg)
+		}
 	}
 }
 
@@ -765,6 +775,10 @@ func TestHandleCatCommand_ActionsRequirePresence(t *testing.T) {
 	repo := newMockRepo()
 	cb := NewCatBot(client, repo, "testnet", "#testchan")
 
+	// Force Purrito to be absent
+	ca := cb.CatActions.(*cat_actions.CatActions)
+	ca.ForceAbsent()
+
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
 
@@ -784,7 +798,6 @@ func TestHandleCatCommand_ActionsRequirePresence(t *testing.T) {
 	}
 
 	// Make Purrito present
-	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(30 * time.Minute)
 
 	// Now pet should work

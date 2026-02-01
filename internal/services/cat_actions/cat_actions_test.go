@@ -158,12 +158,12 @@ func TestNewCatActions(t *testing.T) {
 	}
 }
 
-func TestIsHere_InitiallyFalse(t *testing.T) {
+func TestIsHere_InitiallyTrue(t *testing.T) {
 	repo := newMockRepo()
 	ca := NewCatActions(repo, "testnet", "#testchan")
 
-	if ca.IsHere() {
-		t.Error("IsHere() should be false initially")
+	if !ca.IsHere() {
+		t.Error("IsHere() should be true initially")
 	}
 }
 
@@ -171,26 +171,40 @@ func TestEnsureHere(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
 
-	if caImpl.IsHere() {
-		t.Error("should not be here initially")
+	// Purrito starts present
+	if !caImpl.IsHere() {
+		t.Error("should be here initially")
 	}
 
+	// EnsureHere is a no-op when already present
 	caImpl.EnsureHere(5 * time.Minute)
-
 	if !caImpl.IsHere() {
-		t.Error("should be here after EnsureHere")
+		t.Error("should still be here after EnsureHere while present")
 	}
 
-	// Check that it extends properly
-	caImpl.EnsureHere(10 * time.Minute)
+	// Force purrito to be absent (simulate expired presence, no pending spawn)
+	caImpl.mu.Lock()
+	caImpl.presentUntil = time.Time{}
+	caImpl.nextSpawnAt = time.Time{}
+	caImpl.mu.Unlock()
+
+	if caImpl.IsHere() {
+		t.Error("should not be here after clearing presence")
+	}
+
+	// EnsureHere should bring purrito back when absent
+	caImpl.EnsureHere(5 * time.Minute)
 	if !caImpl.IsHere() {
-		t.Error("should still be here after extending")
+		t.Error("should be here after EnsureHere when absent")
 	}
 }
 
 func TestGatePresenceForAction_CatnipRequiresPresence(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+
+	// Force Purrito to be absent
+	caImpl.ForceAbsent()
 
 	// Purrito is NOT here - catnip should be blocked
 	ok, msg := caImpl.gatePresenceForAction("catnip")
@@ -212,6 +226,9 @@ func TestGatePresenceForAction_CatnipRequiresPresence(t *testing.T) {
 func TestGatePresenceForAction_OtherActionsBlocked(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+
+	// Force Purrito to be absent
+	caImpl.ForceAbsent()
 
 	actions := []string{"pet", "love", "feed", "laser"}
 	for _, action := range actions {
@@ -246,17 +263,20 @@ func TestExecuteAction_NotPurrito(t *testing.T) {
 
 	result := ca.ExecuteAction("pet", "player1", "someone_else")
 
-	if !strings.Contains(result, "does not want") && !strings.Contains(result, "confused") &&
-		!strings.Contains(result, "not interested") && !strings.Contains(result, "meows awkwardly") {
+	if !strings.Contains(result, "not purrito") && !strings.Contains(result, "confused") &&
+		!strings.Contains(result, "Wrong target") && !strings.Contains(result, "tilts") {
 		t.Errorf("expected rejection message for non-purrito target, got: %s", result)
 	}
 }
 
 func TestExecuteAction_PetWhenNotHere(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
 
-	result := ca.ExecuteAction("pet", "player1", "purrito")
+	// Force Purrito to be absent
+	caImpl.ForceAbsent()
+
+	result := caImpl.ExecuteAction("pet", "player1", "purrito")
 
 	if !strings.Contains(result, "not here") {
 		t.Errorf("expected 'not here' message, got: %s", result)
@@ -319,6 +339,9 @@ func TestExecuteAction_Status(t *testing.T) {
 func TestExecuteAction_Catnip(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+
+	// Force Purrito to be absent
+	caImpl.ForceAbsent()
 
 	// Catnip should NOT work when purrito is not here
 	result1 := caImpl.ExecuteAction("catnip", "player1", "purrito")
@@ -464,9 +487,11 @@ func TestCatnipExtendsPurritoPresence(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
 
-	// Initially not here
+	// Force Purrito to be absent
+	caImpl.ForceAbsent()
+
 	if caImpl.IsHere() {
-		t.Error("should not be here initially")
+		t.Error("should not be here after ForceAbsent")
 	}
 
 	// Catnip should NOT work when not here
@@ -475,10 +500,10 @@ func TestCatnipExtendsPurritoPresence(t *testing.T) {
 		t.Errorf("catnip should require presence, got: %s", result)
 	}
 
-	// Make purrito present for a short time
+	// Make purrito present
 	caImpl.EnsureHere(5 * time.Minute)
 
-	// Use catnip - should extend presence to 30 minutes
+	// Use catnip - purrito should remain present
 	caImpl.ExecuteAction("catnip", "player2", "purrito")
 
 	// Should still be here

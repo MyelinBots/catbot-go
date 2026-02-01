@@ -298,7 +298,11 @@ func TestPurritoLaserHandler_NotPurrito(t *testing.T) {
 }
 
 func TestPurritoLaserHandler_WhenNotHere(t *testing.T) {
-	client, _, _, cc := setupTest()
+	client, _, cb, cc := setupTest()
+
+	// Force Purrito to be absent
+	ca := cb.CatActions.(*cat_actions.CatActions)
+	ca.ForceAbsent()
 
 	handler := cc.(*CommandControllerImpl).PurritoLaserHandler()
 

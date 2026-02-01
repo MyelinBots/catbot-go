@@ -599,6 +599,15 @@ func timeoutLeaveMessage() string {
 }
 
 // PopLeaveMessage returns the timeout leave message once (then clears it).
+// ForceAbsent forces Purrito to be absent immediately, clearing any presence
+// and pending spawn timers.
+func (ca *CatActions) ForceAbsent() {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	ca.presentUntil = time.Time{}
+	ca.nextSpawnAt = time.Time{}
+}
+
 func (ca *CatActions) PopLeaveMessage() string {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
