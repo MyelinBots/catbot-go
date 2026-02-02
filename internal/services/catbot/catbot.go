@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -32,14 +31,6 @@ type dailyDecayer interface {
 }
 
 // --------------------------------------------------
-// Presence tuning
-// --------------------------------------------------
-
-const (
-	presenceDuration = 3 * time.Minute // stays 3 minutes
-)
-
-// --------------------------------------------------
 // CatBot
 // --------------------------------------------------
 
@@ -48,7 +39,6 @@ type CatBot struct {
 	CatActions    cat_actions.CatActionsImpl
 	Channel       string
 	Network       string
-	times         []int
 	CatPlayerRepo cat_player.CatPlayerRepository
 
 	// presence state
@@ -71,13 +61,13 @@ func NewCatBot(
 	client IRCClient,
 	catPlayerRepo cat_player.CatPlayerRepository,
 	network, channel string,
+	spawnWindow, minRespawn, maxRespawn time.Duration,
 ) *CatBot {
 	cb := &CatBot{
 		IrcClient:     client,
-		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel),
+		CatActions:    cat_actions.NewCatActions(catPlayerRepo, network, channel, spawnWindow, minRespawn, maxRespawn),
 		Channel:       channel,
 		Network:       network,
-		times:         []int{120}, // 2 minutes
 		CatPlayerRepo: catPlayerRepo,
 		BondPoints:    bondpoints.New(catPlayerRepo),
 	}
@@ -158,26 +148,29 @@ func (cb *CatBot) HandleCatCommand(ctx context.Context, args ...string) error {
 // --------------------------------------------------
 
 func (cb *CatBot) Start(ctx context.Context) {
-	appearTimer := time.NewTimer(0)
-	defer appearTimer.Stop()
-
 	decayTicker := time.NewTicker(24 * time.Hour)
 	defer decayTicker.Stop()
+
+	// Presence ticker checks for spawn/leave messages every 10 seconds
+	presenceTicker := time.NewTicker(10 * time.Second)
+	defer presenceTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
-		case <-appearTimer.C:
-			cb.HandleRandomAction(ctx)
-
-			wait := cb.times[rand.Intn(len(cb.times))]
-			cb.mu.Lock()
-			cb.nextAppear = time.Now().Add(time.Duration(wait) * time.Second)
-			cb.mu.Unlock()
-
-			appearTimer.Reset(time.Duration(wait) * time.Second)
+		case <-presenceTicker.C:
+			// Check for spawn/leave messages
+			if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
+				spawnMsg, leaveMsg := ca.TickPresence()
+				if leaveMsg != "" {
+					cb.IrcClient.Privmsg(cb.Channel, leaveMsg)
+				}
+				if spawnMsg != "" {
+					cb.IrcClient.Privmsg(cb.Channel, spawnMsg)
+				}
+			}
 
 		case <-decayTicker.C:
 			if ca, ok := cb.CatActions.(*cat_actions.CatActions); ok {
@@ -198,35 +191,6 @@ func (cb *CatBot) Start(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// --------------------------------------------------
-// Appearance logic
-// --------------------------------------------------
-
-func (cb *CatBot) HandleRandomAction(ctx context.Context) {
-	ca, ok := cb.CatActions.(*cat_actions.CatActions)
-	if !ok {
-		return
-	}
-
-	// 1) force CatActions to update state (timeout check)
-	here := ca.IsHere()
-
-	// 2) show timeout leave message ONCE
-	if msg := ca.PopLeaveMessage(); msg != "" {
-		cb.IrcClient.Privmsg(cb.Channel, msg)
-		return
-	}
-
-	// 3) if not here, do nothing
-	if !here {
-		return
-	}
-
-	// 4) ambient emote only when present
-	action := ca.GetRandomAction()
-	cb.IrcClient.Privmsg(cb.Channel, "🐈 meowww ... "+action)
 }
 
 // --------------------------------------------------

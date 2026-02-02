@@ -7,9 +7,16 @@ import (
 )
 
 type Config struct {
-	AppConfig AppConfig `env:"APPCONFIG"`
-	IRCConfig IRCConfig `env:"IRCCONFIG"`
-	DBConfig  DBConfig  `env:"DBCONFIG"`
+	AppConfig  AppConfig  `env:"APPCONFIG"`
+	IRCConfig  IRCConfig  `env:"IRCCONFIG"`
+	DBConfig   DBConfig   `env:"DBCONFIG"`
+	GameConfig GameConfig `env:"GAMECONFIG"`
+}
+
+type GameConfig struct {
+	SpawnWindowMinutes int `default:"30" env:"SPAWN_WINDOW_MINUTES"`
+	MinRespawnMinutes  int `default:"30" env:"MIN_RESPAWN_MINUTES"`
+	MaxRespawnMinutes  int `default:"30" env:"MAX_RESPAWN_MINUTES"`
 }
 
 type AppConfig struct {

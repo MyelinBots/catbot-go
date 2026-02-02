@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/MyelinBots/catbot-go/config"
 	"github.com/MyelinBots/catbot-go/internal/db"
@@ -71,10 +72,15 @@ func StartBot() error {
 		GameStarted:      make(map[string]bool),
 	}
 
+	// Convert game config to durations
+	spawnWindow := time.Duration(cfg.GameConfig.SpawnWindowMinutes) * time.Minute
+	minRespawn := time.Duration(cfg.GameConfig.MinRespawnMinutes) * time.Minute
+	maxRespawn := time.Duration(cfg.GameConfig.MaxRespawnMinutes) * time.Minute
+
 	// helper: init a channel's game+commands in one place (reuse database)
 	initChannel := func(channel string) error {
 		repo := cat_player.NewPlayerRepository(database)
-		game := catbot.NewCatBot(conn, repo, cfg.IRCConfig.Network, channel)
+		game := catbot.NewCatBot(conn, repo, cfg.IRCConfig.Network, channel, spawnWindow, minRespawn, maxRespawn)
 
 		// cast once เพื่อเรียก handler methods ได้ตรงๆ
 		cmdController := commands.NewCommandController(game)

@@ -146,7 +146,7 @@ func (m *mockCatPlayerRepo) SetLoveMeter(ctx context.Context, nick, network, cha
 
 func TestNewCatActions(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	if ca == nil {
 		t.Fatal("NewCatActions returned nil")
@@ -160,7 +160,7 @@ func TestNewCatActions(t *testing.T) {
 
 func TestIsHere_InitiallyTrue(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	if !ca.IsHere() {
 		t.Error("IsHere() should be true initially")
@@ -169,7 +169,7 @@ func TestIsHere_InitiallyTrue(t *testing.T) {
 
 func TestEnsureHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Purrito starts present
 	if !caImpl.IsHere() {
@@ -201,7 +201,7 @@ func TestEnsureHere(t *testing.T) {
 
 func TestGatePresenceForAction_CatnipRequiresPresence(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Force Purrito to be absent
 	caImpl.ForceAbsent()
@@ -225,7 +225,7 @@ func TestGatePresenceForAction_CatnipRequiresPresence(t *testing.T) {
 
 func TestGatePresenceForAction_OtherActionsBlocked(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Force Purrito to be absent
 	caImpl.ForceAbsent()
@@ -244,7 +244,7 @@ func TestGatePresenceForAction_OtherActionsBlocked(t *testing.T) {
 
 func TestGatePresenceForAction_AllowedWhenHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	caImpl.EnsureHere(5 * time.Minute)
 
@@ -259,7 +259,7 @@ func TestGatePresenceForAction_AllowedWhenHere(t *testing.T) {
 
 func TestExecuteAction_NotPurrito(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	result := ca.ExecuteAction("pet", "player1", "someone_else")
 
@@ -271,7 +271,7 @@ func TestExecuteAction_NotPurrito(t *testing.T) {
 
 func TestExecuteAction_PetWhenNotHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Force Purrito to be absent
 	caImpl.ForceAbsent()
@@ -285,7 +285,7 @@ func TestExecuteAction_PetWhenNotHere(t *testing.T) {
 
 func TestExecuteAction_PetWhenHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(5 * time.Minute)
 
 	result := caImpl.ExecuteAction("pet", "player1", "purrito")
@@ -298,7 +298,7 @@ func TestExecuteAction_PetWhenHere(t *testing.T) {
 
 func TestExecuteAction_LaserWhenHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(5 * time.Minute)
 
 	result := caImpl.ExecuteAction("laser", "player1", "purrito")
@@ -314,7 +314,7 @@ func TestExecuteAction_LaserWhenHere(t *testing.T) {
 
 func TestExecuteAction_FeedWhenHere(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(5 * time.Minute)
 
 	result := caImpl.ExecuteAction("feed", "player1", "purrito")
@@ -326,7 +326,7 @@ func TestExecuteAction_FeedWhenHere(t *testing.T) {
 
 func TestExecuteAction_Status(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Status doesn't require presence
 	result := ca.ExecuteAction("status", "player1", "purrito")
@@ -338,7 +338,7 @@ func TestExecuteAction_Status(t *testing.T) {
 
 func TestExecuteAction_Catnip(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Force Purrito to be absent
 	caImpl.ForceAbsent()
@@ -359,7 +359,7 @@ func TestExecuteAction_Catnip(t *testing.T) {
 
 func TestExecuteAction_CatnipCooldown(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(30 * time.Minute)
 
 	// First use should work
@@ -377,7 +377,7 @@ func TestExecuteAction_CatnipCooldown(t *testing.T) {
 
 func TestExecuteAction_SlapWarning(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// First slap - warning only (various warning messages contain different emojis/text)
 	result1 := caImpl.ExecuteAction("slap", "player1", "purrito")
@@ -407,7 +407,7 @@ func TestExecuteAction_SlapWarning(t *testing.T) {
 
 func TestExecuteAction_UnknownAction(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	result := ca.ExecuteAction("unknown_action", "player1", "purrito")
 
@@ -418,7 +418,7 @@ func TestExecuteAction_UnknownAction(t *testing.T) {
 
 func TestCatnipRemaining(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(30 * time.Minute)
 
 	// Initially no cooldown
@@ -442,7 +442,7 @@ func TestCatnipRemaining(t *testing.T) {
 
 func TestGetRandomAction(t *testing.T) {
 	repo := newMockRepo()
-	ca := NewCatActions(repo, "testnet", "#testchan")
+	ca := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Run multiple times to check randomness
 	seen := make(map[string]bool)
@@ -485,7 +485,7 @@ func TestNormalizeAction(t *testing.T) {
 
 func TestCatnipExtendsPurritoPresence(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Force Purrito to be absent
 	caImpl.ForceAbsent()
@@ -514,7 +514,7 @@ func TestCatnipExtendsPurritoPresence(t *testing.T) {
 
 func TestCaseInsensitiveTarget(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(5 * time.Minute)
 
 	targets := []string{"purrito", "PURRITO", "Purrito", "PuRrItO"}
@@ -530,7 +530,7 @@ func TestCaseInsensitiveTarget(t *testing.T) {
 // 24-hour cooldowns for catnip usage.
 func TestCatnipIndependentCooldowns(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Ensure Purrito is present
 	caImpl.EnsureHere(30 * time.Minute)
@@ -595,7 +595,7 @@ func TestCatnipIndependentCooldowns(t *testing.T) {
 // cooldown, the cat's presence is not affected (cat stays present)
 func TestCatnipCooldownDoesNotAffectPresence(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
 	// Make Purrito present
 	caImpl.EnsureHere(30 * time.Minute)
@@ -626,7 +626,7 @@ func TestCatnipCooldownDoesNotAffectPresence(t *testing.T) {
 // TestCatnipCooldownNickNormalization tests that nick prefixes don't create separate cooldowns
 func TestCatnipCooldownNickNormalization(t *testing.T) {
 	repo := newMockRepo()
-	caImpl := NewCatActions(repo, "testnet", "#testchan").(*CatActions)
+	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 	caImpl.EnsureHere(30 * time.Minute)
 
 	// User uses catnip as "player1"

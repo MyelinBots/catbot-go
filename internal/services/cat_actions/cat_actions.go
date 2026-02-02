@@ -93,7 +93,7 @@ type CatActions struct {
 	lastSpawnMsg string
 }
 
-func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channel string) CatActionsImpl {
+func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channel string, spawnWindow, minRespawn, maxRespawn time.Duration) CatActionsImpl {
 	ca := &CatActions{
 		LoveMeter:     lovemeter.NewLoveMeter(catPlayerRepo, network, channel),
 		BondPoints:    bondpoints.New(catPlayerRepo),
@@ -105,9 +105,9 @@ func NewCatActions(catPlayerRepo cat_player.CatPlayerRepository, network, channe
 		slapWarned:   make(map[string]bool),
 		catnipUsedAt: make(map[string]time.Time),
 
-		minRespawn:  30 * time.Minute, // minimum time between spawns
-		maxRespawn:  30 * time.Minute, // maximum time between spawns
-		spawnWindow: 30 * time.Minute, // present for 30 minutes
+		minRespawn:  minRespawn,
+		maxRespawn:  maxRespawn,
+		spawnWindow: spawnWindow,
 	}
 
 	// Start present immediately

@@ -166,7 +166,7 @@ func TestNewCatBot(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
 
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	if cb == nil {
 		t.Fatal("NewCatBot returned nil")
@@ -182,7 +182,7 @@ func TestNewCatBot(t *testing.T) {
 func TestIsPresent_InitiallyFalse(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	if cb.IsPresent() {
 		t.Error("should not be present initially")
@@ -192,7 +192,7 @@ func TestIsPresent_InitiallyFalse(t *testing.T) {
 func TestConsumePresence_WhenNotPresent(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	consumed := cb.ConsumePresence()
 	if consumed {
@@ -203,7 +203,7 @@ func TestConsumePresence_WhenNotPresent(t *testing.T) {
 func TestConsumePresence_WhenPresent(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Simulate presence
 	cb.mu.Lock()
@@ -224,7 +224,7 @@ func TestConsumePresence_WhenPresent(t *testing.T) {
 func TestAppearTimes(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	now := time.Now()
 	later := now.Add(2 * time.Minute)
@@ -243,45 +243,10 @@ func TestAppearTimes(t *testing.T) {
 	}
 }
 
-func TestHandleRandomAction_SendsMessage(t *testing.T) {
-	client := &mockIRCClient{}
-	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
-
-	ctx := context.Background()
-	cb.HandleRandomAction(ctx)
-
-	msg := client.LastMessage()
-	if !strings.Contains(msg, "meowww") {
-		t.Errorf("expected meowww message, got %q", msg)
-	}
-}
-
-func TestHandleRandomAction_SyncsCatActionsPresence(t *testing.T) {
-	client := &mockIRCClient{}
-	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
-
-	ctx := context.Background()
-
-	// CatActions starts present
-	ca := cb.CatActions.(*cat_actions.CatActions)
-	if !ca.IsHere() {
-		t.Error("CatActions should be here initially")
-	}
-
-	cb.HandleRandomAction(ctx)
-
-	// CatActions should still be here after HandleRandomAction
-	if !ca.IsHere() {
-		t.Error("CatActions should still be here after HandleRandomAction")
-	}
-}
-
 func TestHandleCatCommand_NoArgs(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -300,7 +265,7 @@ func TestHandleCatCommand_NoArgs(t *testing.T) {
 func TestHandleCatCommand_InsufficientArgs(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -319,7 +284,7 @@ func TestHandleCatCommand_InsufficientArgs(t *testing.T) {
 func TestHandleCatCommand_PetWhenNotHere(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Force Purrito to be absent
 	ca := cb.CatActions.(*cat_actions.CatActions)
@@ -342,7 +307,7 @@ func TestHandleCatCommand_PetWhenNotHere(t *testing.T) {
 func TestHandleCatCommand_PetWhenHere(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Make Purrito present via CatActions
 	ca := cb.CatActions.(*cat_actions.CatActions)
@@ -365,7 +330,7 @@ func TestHandleCatCommand_PetWhenHere(t *testing.T) {
 func TestHandleCatCommand_Status(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -385,7 +350,7 @@ func TestHandleCatCommand_Status(t *testing.T) {
 func TestHandleCatCommand_Catnip(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -437,7 +402,7 @@ func TestNormalizeNick(t *testing.T) {
 func TestAppendBondProgress_NotBonded(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 
@@ -461,7 +426,7 @@ func TestAppendBondProgress_NotBonded(t *testing.T) {
 func TestAppendBondProgress_Bonded(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 
@@ -482,16 +447,10 @@ func TestAppendBondProgress_Bonded(t *testing.T) {
 	}
 }
 
-func TestPresenceDuration(t *testing.T) {
-	if presenceDuration != 3*time.Minute {
-		t.Errorf("presenceDuration = %v, want 3m", presenceDuration)
-	}
-}
-
 func TestHandleCatCommand_Feed(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Make Purrito present via CatActions
 	ca := cb.CatActions.(*cat_actions.CatActions)
@@ -514,7 +473,7 @@ func TestHandleCatCommand_Feed(t *testing.T) {
 func TestHandleCatCommand_Love(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(5 * time.Minute)
@@ -536,7 +495,7 @@ func TestHandleCatCommand_Love(t *testing.T) {
 func TestHandleCatCommand_Laser(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(5 * time.Minute)
@@ -558,7 +517,7 @@ func TestHandleCatCommand_Laser(t *testing.T) {
 func TestHandleCatCommand_Slap(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 	ctx = context_manager.SetNickContext(ctx, "player1")
@@ -579,7 +538,7 @@ func TestHandleCatCommand_Slap(t *testing.T) {
 func TestHandleCatCommand_NotPurrito(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(5 * time.Minute)
@@ -602,7 +561,7 @@ func TestHandleCatCommand_NotPurrito(t *testing.T) {
 func TestHandleCatCommand_UnknownAction(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(5 * time.Minute)
@@ -624,7 +583,7 @@ func TestHandleCatCommand_UnknownAction(t *testing.T) {
 func TestHandleCatCommand_BondedPlayer(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 
@@ -659,23 +618,10 @@ func TestHandleCatCommand_BondedPlayer(t *testing.T) {
 	}
 }
 
-func TestCatBotTimes(t *testing.T) {
-	client := &mockIRCClient{}
-	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
-
-	if len(cb.times) == 0 {
-		t.Error("times should not be empty")
-	}
-	if cb.times[0] != 120 {
-		t.Errorf("expected first time to be 120 (2 min), got %d", cb.times[0])
-	}
-}
-
 func TestAppendBondProgress_NilCatActions(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Replace CatActions with nil-like behavior
 	cb.CatActions = nil
@@ -700,7 +646,7 @@ func TestAppendBondProgress_NilCatActions(t *testing.T) {
 func TestAppendBondProgress_WithGiftUnlock(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ctx := context.Background()
 
@@ -728,7 +674,7 @@ func TestAppendBondProgress_WithGiftUnlock(t *testing.T) {
 func TestHandleCatCommand_WithActionPrefix(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	ca := cb.CatActions.(*cat_actions.CatActions)
 	ca.EnsureHere(5 * time.Minute)
@@ -748,32 +694,10 @@ func TestHandleCatCommand_WithActionPrefix(t *testing.T) {
 	}
 }
 
-func TestHandleRandomAction_Multiple(t *testing.T) {
-	client := &mockIRCClient{}
-	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
-
-	ctx := context.Background()
-
-	// Multiple appearances
-	cb.HandleRandomAction(ctx)
-	cb.HandleRandomAction(ctx)
-	cb.HandleRandomAction(ctx)
-
-	// Should have sent multiple messages
-	client.mu.Lock()
-	count := len(client.messages)
-	client.mu.Unlock()
-
-	if count < 3 {
-		t.Errorf("expected at least 3 messages, got %d", count)
-	}
-}
-
 func TestHandleCatCommand_ActionsRequirePresence(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Force Purrito to be absent
 	ca := cb.CatActions.(*cat_actions.CatActions)
@@ -826,7 +750,7 @@ func TestNormalizeNick_OnlyPrefixes(t *testing.T) {
 func TestStart_QuickCancel(t *testing.T) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
+	cb := NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 
 	// Use a context that cancels quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -847,34 +771,6 @@ func TestStart_QuickCancel(t *testing.T) {
 		t.Error("Start did not exit when context was cancelled")
 	}
 
-	// Should have sent at least one message (the initial appear)
-	client.mu.Lock()
-	count := len(client.messages)
-	client.mu.Unlock()
-
-	if count < 1 {
-		t.Errorf("expected at least 1 message from Start, got %d", count)
-	}
+	_ = client // Start exits cleanly, no messages expected in short timeout
 }
 
-func TestHandleRandomAction_WanderOffMessage(t *testing.T) {
-	client := &mockIRCClient{}
-	repo := newMockRepo()
-	cb := NewCatBot(client, repo, "testnet", "#testchan")
-
-	ctx := context.Background()
-	cb.HandleRandomAction(ctx)
-
-	// Initial message
-	client.mu.Lock()
-	initialCount := len(client.messages)
-	client.mu.Unlock()
-
-	if initialCount < 1 {
-		t.Error("expected at least 1 message from HandleRandomAction")
-	}
-
-	// Wait a bit longer than presence duration - but we can't easily test
-	// the wander off because it waits 3 minutes. We just verify the goroutine
-	// was spawned without error.
-}

@@ -189,7 +189,7 @@ func (m *mockCatPlayerRepo) SetLoveMeter(ctx context.Context, nick, network, cha
 func setupTest() (*mockIRCClient, *mockCatPlayerRepo, *catbot.CatBot, CommandController) {
 	client := &mockIRCClient{}
 	repo := newMockRepo()
-	cb := catbot.NewCatBot(client, repo, "testnet", "#testchan")
+	cb := catbot.NewCatBot(client, repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute)
 	cc := NewCommandController(cb)
 	return client, repo, cb, cc
 }
