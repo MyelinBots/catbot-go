@@ -421,14 +421,14 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			return msg
 		}
 
-		// One interaction per spawn - despawn immediately (even for cooldown rejection)
-		ca.DespawnAfterInteraction()
-
-		// cooldown => already despawned, just return cooldown message
+		// cooldown rejection does NOT cause Purrito to leave (exception for catnip)
 		if ca.CatnipOnCooldown(player) {
 			rem := ca.CatnipRemaining(player)
 			return fmt.Sprintf("aww %s, you already used catnip today. Try again in %s", player, formatRemaining(rem))
 		}
+
+		// Successful catnip - one interaction per spawn, despawn immediately
+		ca.DespawnAfterInteraction()
 
 		return ca.catnipMessage(player)
 
