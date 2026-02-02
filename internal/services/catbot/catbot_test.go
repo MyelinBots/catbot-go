@@ -369,9 +369,9 @@ func TestHandleCatCommand_Catnip(t *testing.T) {
 		t.Errorf("expected catnip message, got %q", msg)
 	}
 
-	// Purrito should still be here after catnip
-	if !ca.IsHere() {
-		t.Error("Purrito should still be here after catnip")
+	// Purrito should leave after catnip interaction (one interaction per spawn)
+	if ca.IsHere() {
+		t.Error("Purrito should leave after catnip interaction")
 	}
 }
 

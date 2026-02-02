@@ -275,6 +275,14 @@ func (ca *CatActions) despawnLocked(now time.Time) {
 	ca.nextSpawnAt = now.Add(delay)
 }
 
+// DespawnAfterInteraction immediately despawns Purrito and starts the respawn timer.
+// Call this after a successful interaction to enforce "one interaction per spawn".
+func (ca *CatActions) DespawnAfterInteraction() {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+	ca.despawnLocked(time.Now())
+}
+
 // --------------------
 // Catnip cooldown (daily)
 // --------------------
@@ -358,6 +366,9 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			return msg
 		}
 
+		// One interaction per spawn - despawn immediately
+		ca.DespawnAfterInteraction()
+
 		if rand.Intn(100) < 60 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.acceptMessage(player)
@@ -370,6 +381,9 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
 		}
+
+		// One interaction per spawn - despawn immediately
+		ca.DespawnAfterInteraction()
 
 		foods := []string{
 			"salmon", "tuna", "sardines", "chicken", "kibble", "milk",
@@ -391,6 +405,9 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			return msg
 		}
 
+		// One interaction per spawn - despawn immediately
+		ca.DespawnAfterInteraction()
+
 		if rand.Intn(100) < 60 {
 			ca.LoveMeter.Increase(player, 1)
 			return ca.laserAcceptMessage(player)
@@ -404,13 +421,15 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 			return msg
 		}
 
-		// cooldown => do NOT despawn, do NOT count as a leave
+		// cooldown => do NOT despawn, do NOT count as an interaction
 		if ca.CatnipOnCooldown(player) {
 			rem := ca.CatnipRemaining(player)
 			return fmt.Sprintf("aww %s, you already used catnip today. Try again in %s", player, formatRemaining(rem))
 		}
 
-		// allowed catnip => still does NOT despawn (he stays for full 10 minutes)
+		// One interaction per spawn - despawn immediately
+		ca.DespawnAfterInteraction()
+
 		return ca.catnipMessage(player)
 
 	case "slap", "kick":

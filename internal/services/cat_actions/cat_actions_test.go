@@ -368,6 +368,10 @@ func TestExecuteAction_CatnipCooldown(t *testing.T) {
 		t.Error("first catnip use should not be on cooldown")
 	}
 
+	// Purrito left after the interaction, force respawn for cooldown test
+	caImpl.ForceAbsent()
+	caImpl.EnsureHere(30 * time.Minute)
+
 	// Second use should be on cooldown
 	result2 := caImpl.ExecuteAction("catnip", "player1", "purrito")
 	if !strings.Contains(result2, "already used") {
@@ -483,7 +487,7 @@ func TestNormalizeAction(t *testing.T) {
 	}
 }
 
-func TestCatnipExtendsPurritoPresence(t *testing.T) {
+func TestCatnipRequiresPresence(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
@@ -503,12 +507,12 @@ func TestCatnipExtendsPurritoPresence(t *testing.T) {
 	// Make purrito present
 	caImpl.EnsureHere(5 * time.Minute)
 
-	// Use catnip - purrito should remain present
+	// Use catnip - purrito should leave after interaction (one interaction per spawn)
 	caImpl.ExecuteAction("catnip", "player2", "purrito")
 
-	// Should still be here
-	if !caImpl.IsHere() {
-		t.Error("purrito should still be here after catnip")
+	// Should NOT be here anymore (Purrito leaves after interaction)
+	if caImpl.IsHere() {
+		t.Error("purrito should leave after catnip interaction")
 	}
 }
 
@@ -544,13 +548,17 @@ func TestCatnipIndependentCooldowns(t *testing.T) {
 		t.Errorf("User A catnip response should contain catnip emoji, got: %s", resultA1)
 	}
 
-	// User A tries again immediately - should be blocked
+	// Purrito left after interaction, force respawn for cooldown test
+	caImpl.ForceAbsent()
+	caImpl.EnsureHere(30 * time.Minute)
+
+	// User A tries again - should be blocked (cooldown)
 	resultA2 := caImpl.ExecuteAction("catnip", "userA", "purrito")
 	if !strings.Contains(resultA2, "already used") {
 		t.Errorf("User A second catnip should be blocked, got: %s", resultA2)
 	}
 
-	// User B uses catnip - should succeed (independent cooldown)
+	// User B uses catnip - should succeed (independent cooldown, and Purrito still here since A was rejected)
 	resultB1 := caImpl.ExecuteAction("catnip", "userB", "purrito")
 	if strings.Contains(resultB1, "already used") {
 		t.Errorf("User B first catnip should succeed (independent from A), got: %s", resultB1)
@@ -558,6 +566,10 @@ func TestCatnipIndependentCooldowns(t *testing.T) {
 	if !strings.Contains(resultB1, "🌿") {
 		t.Errorf("User B catnip response should contain catnip emoji, got: %s", resultB1)
 	}
+
+	// Purrito left after interaction, force respawn for cooldown test
+	caImpl.ForceAbsent()
+	caImpl.EnsureHere(30 * time.Minute)
 
 	// User B tries again - should be blocked
 	resultB2 := caImpl.ExecuteAction("catnip", "userB", "purrito")
@@ -591,9 +603,9 @@ func TestCatnipIndependentCooldowns(t *testing.T) {
 	}
 }
 
-// TestCatnipCooldownDoesNotAffectPresence tests that when catnip is rejected due to
-// cooldown, the cat's presence is not affected (cat stays present)
-func TestCatnipCooldownDoesNotAffectPresence(t *testing.T) {
+// TestCatnipCooldownDoesNotConsumePresence tests that when catnip is rejected due to
+// cooldown, Purrito does not leave (only successful interactions cause Purrito to leave)
+func TestCatnipCooldownDoesNotConsumePresence(t *testing.T) {
 	repo := newMockRepo()
 	caImpl := NewCatActions(repo, "testnet", "#testchan", 30*time.Minute, 30*time.Minute, 30*time.Minute).(*CatActions)
 
@@ -606,18 +618,22 @@ func TestCatnipCooldownDoesNotAffectPresence(t *testing.T) {
 		t.Error("first catnip should succeed")
 	}
 
-	// Purrito should still be here
-	if !caImpl.IsHere() {
-		t.Error("purrito should be present after successful catnip")
+	// Purrito should have left after the successful interaction
+	if caImpl.IsHere() {
+		t.Error("purrito should leave after successful catnip (one interaction per spawn)")
 	}
 
-	// User A tries again - should be rejected due to cooldown
+	// Force respawn Purrito to test cooldown rejection
+	caImpl.ForceAbsent()
+	caImpl.EnsureHere(30 * time.Minute)
+
+	// User A tries again - should be rejected due to cooldown (NOT because Purrito is gone)
 	result2 := caImpl.ExecuteAction("catnip", "userA", "purrito")
 	if !strings.Contains(result2, "already used") {
-		t.Error("second catnip should be on cooldown")
+		t.Errorf("second catnip should be on cooldown, got: %s", result2)
 	}
 
-	// Purrito should STILL be here (presence not affected by rejection)
+	// Purrito should STILL be here (cooldown rejection doesn't consume presence)
 	if !caImpl.IsHere() {
 		t.Error("purrito should still be present after catnip rejection due to cooldown")
 	}
@@ -635,13 +651,17 @@ func TestCatnipCooldownNickNormalization(t *testing.T) {
 		t.Error("First catnip should succeed")
 	}
 
+	// Purrito left after interaction, force respawn to test cooldown with normalized nicks
+	caImpl.ForceAbsent()
+	caImpl.EnsureHere(30 * time.Minute)
+
 	// Same user with @ prefix should be blocked (same cooldown)
 	result2 := caImpl.ExecuteAction("catnip", "@player1", "purrito")
 	if !strings.Contains(result2, "already used") {
 		t.Errorf("@player1 should share cooldown with player1, got: %s", result2)
 	}
 
-	// Same user with different case should be blocked
+	// Same user with different case should be blocked (Purrito still here since cooldown rejected)
 	result3 := caImpl.ExecuteAction("catnip", "PLAYER1", "purrito")
 	if !strings.Contains(result3, "already used") {
 		t.Errorf("PLAYER1 should share cooldown with player1, got: %s", result3)
