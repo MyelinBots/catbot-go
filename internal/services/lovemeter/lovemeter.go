@@ -3,16 +3,17 @@ package lovemeter
 import (
 	"context"
 	"fmt"
+	"log"
+	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 )
 
-// --------------------
-// interface + constructor
-// --------------------
+// --------------------------------------------------
+// Interface + Constructor
+// --------------------------------------------------
 
 type LoveMeter interface {
 	Increase(player string, amount int)
@@ -23,13 +24,14 @@ type LoveMeter interface {
 	GetMood(player string) string
 	StatusLine(player string) string
 
+	// Returns: (bondPointsAwardedToday, newStreak)
+	RecordInteraction(ctx context.Context, player string) (awardedBondPoints int, newStreak int, err error)
+
 	// decrease once a day (only those who have reached 100%)
 	DailyDecayAll(ctx context.Context) error
 }
 
 type LoveMeterImpl struct {
-	mu            sync.RWMutex
-	values        map[string]int
 	catPlayerRepo cat_player.CatPlayerRepository
 	Network       string
 	Channel       string
@@ -37,35 +39,21 @@ type LoveMeterImpl struct {
 
 func NewLoveMeter(catPlayerRepo cat_player.CatPlayerRepository, network, channel string) LoveMeter {
 	return &LoveMeterImpl{
-		values:        make(map[string]int),
 		catPlayerRepo: catPlayerRepo,
 		Network:       network,
 		Channel:       channel,
 	}
 }
 
-// --------------------
-// normalization + cache
-// --------------------
+// --------------------------------------------------
+// Normalization
+// --------------------------------------------------
 
 func norm(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
-func (lm *LoveMeterImpl) setCache(key string, v int) {
-	lm.mu.Lock()
-	lm.values[key] = v
-	lm.mu.Unlock()
-}
-
-func (lm *LoveMeterImpl) getCache(key string) (int, bool) {
-	lm.mu.RLock()
-	v, ok := lm.values[key]
-	lm.mu.RUnlock()
-	return v, ok
-}
-
-// --------------------
-// love rules (cap + bonded bar)
-// --------------------
+// --------------------------------------------------
+// Love Rules (cap + bonded bar)
+// --------------------------------------------------
 
 func ClampLove(love int) int {
 	if love < 0 {
@@ -77,10 +65,7 @@ func ClampLove(love int) int {
 	return love
 }
 
-func IsBonded(love int) bool {
-	// since love is capped at 100, >= is fine; you can switch to == if you prefer
-	return love >= 100
-}
+func IsBonded(love int) bool { return love >= 100 }
 
 func RenderLoveBar(love int) string {
 	love = ClampLove(love)
@@ -89,21 +74,38 @@ func RenderLoveBar(love int) string {
 		return "[❤️✨❤️✨❤️✨❤️✨❤️]"
 	}
 
-	filled := love / 10 // 0..10
+	filled := love / 10
 	bar := "["
+
 	for i := 0; i < filled; i++ {
 		bar += "❤️"
 	}
 	for i := filled; i < 10; i++ {
 		bar += "░"
 	}
+
 	bar += "]"
 	return bar
 }
 
-// --------------------
-// time helpers
-// --------------------
+// --------------------------------------------------
+// Time Helpers
+// --------------------------------------------------
+
+func nyNow() time.Time {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.Now()
+	}
+	return time.Now().In(loc)
+}
+
+func sameDayNY(a, b time.Time) bool {
+	loc, _ := time.LoadLocation("America/New_York")
+	aa := a.In(loc)
+	bb := b.In(loc)
+	return aa.Year() == bb.Year() && aa.YearDay() == bb.YearDay()
+}
 
 func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
@@ -111,29 +113,42 @@ func sameDay(a, b time.Time) bool {
 	return ay == by && am == bm && ad == bd
 }
 
-// --------------------
-// persistence
-// --------------------
+// --------------------------------------------------
+// Persistence
+// --------------------------------------------------
 
 func (lm *LoveMeterImpl) persistLove(key string, love int) {
-	_ = lm.catPlayerRepo.UpsertPlayer(context.Background(), &cat_player.CatPlayer{
-		Name:      key,
-		LoveMeter: love,
-		Network:   lm.Network,
-		Channel:   lm.Channel,
-	})
+	ctx := context.Background()
+
+	// ensure row exists (DO NOT overwrite other fields)
+	p, err := lm.catPlayerRepo.GetPlayerByName(ctx, key, lm.Network, lm.Channel)
+	if err != nil {
+		log.Printf("failed to load player %s: %v", key, err)
+		return
+	}
+	if p == nil {
+		_ = lm.catPlayerRepo.UpsertPlayer(ctx, &cat_player.CatPlayer{
+			Name:    key,
+			Network: lm.Network,
+			Channel: lm.Channel,
+		})
+	}
+
+	// update ONLY love_meter
+	if err := lm.catPlayerRepo.SetLoveMeter(ctx, key, lm.Network, lm.Channel, love); err != nil {
+		log.Printf("failed to set love for %s: %v", key, err)
+	}
 }
 
-// --------------------
-// core API (mutations + reads)
-// --------------------
+// --------------------------------------------------
+// Core API (mutations + reads)
+// --------------------------------------------------
 
 func (lm *LoveMeterImpl) Increase(player string, amount int) {
 	key := norm(player)
 	current := lm.Get(key)
 
 	newVal := ClampLove(current + amount)
-	lm.setCache(key, newVal)
 	lm.persistLove(key, newVal)
 }
 
@@ -142,26 +157,17 @@ func (lm *LoveMeterImpl) Decrease(player string, amount int) {
 	current := lm.Get(key)
 
 	newVal := ClampLove(current - amount)
-	lm.setCache(key, newVal)
 	lm.persistLove(key, newVal)
 }
 
 func (lm *LoveMeterImpl) Get(player string) int {
 	key := norm(player)
 
-	// cache first
-	if v, ok := lm.getCache(key); ok {
-		return v
-	}
-
-	// DB fallback
 	fp, err := lm.catPlayerRepo.GetPlayerByName(context.Background(), key, lm.Network, lm.Channel)
 	if err != nil || fp == nil {
-		lm.setCache(key, 0)
 		return 0
 	}
 
-	lm.setCache(key, ClampLove(fp.LoveMeter))
 	return ClampLove(fp.LoveMeter)
 }
 
@@ -171,17 +177,22 @@ func (lm *LoveMeterImpl) GetLoveBar(player string) string {
 
 func (lm *LoveMeterImpl) GetMood(player string) string {
 	love := lm.Get(player)
+
 	switch {
 	case love == 0:
-		return "hostile 😾"
+		return "\x0304hostile 😾\x0F" // red
+
 	case love < 20:
-		return "sad 😿"
+		return "\x0307sad 😿\x0F" // Orange
+
 	case love < 50:
-		return "cautious 😼"
+		return "\x0308cautious 😼\x0F" // yellow
+
 	case love < 80:
-		return "friendly 😺"
+		return "\x0303friendly 😺\x0F" // green
+
 	default:
-		return "loves you 😻"
+		return "\x0306loves you 😻\x0F" // purple / pinkish
 	}
 }
 
@@ -190,13 +201,96 @@ func (lm *LoveMeterImpl) StatusLine(player string) string {
 	return fmt.Sprintf("%d%% %s %s", love, lm.GetMood(player), lm.GetLoveBar(player))
 }
 
-// --------------------
-// daily decay (DB-driven)
-// --------------------
+// --------------------------------------------------
+// BondPoints (Top Love)
+// --------------------------------------------------
 
-// DailyDecayAll:
-// - find users who reached 100% (repo.ListPlayersAtOrAbove(..., 100))
-// - if today hasn't interacted and hasn't decayed today -> decrease 5 and set LastDecayAt
+// Base: +2
+// Bonus: +min(5, floor(streak/7))
+// => 2..7 per day
+func bondPointsForStreak(streak int) int {
+	bonus := int(math.Floor(float64(streak) / 7.0))
+	if bonus > 5 {
+		bonus = 5
+	}
+	if bonus < 0 {
+		bonus = 0
+	}
+	return 2 + bonus
+}
+
+// RecordInteraction (fixed):
+// - TouchInteraction always (for decay)
+// - Only when love==100 (bonded)
+// - Only once per NY day using LastBondPointsAt
+// - Uses CatPlayer.BondPointStreak + repo.SetBondPointStreak
+func (lm *LoveMeterImpl) RecordInteraction(ctx context.Context, player string) (awardedBondPoints int, newStreak int, err error) {
+	key := norm(player)
+	now := nyNow()
+
+	// Always mark interaction time (supports decay logic)
+	_ = lm.catPlayerRepo.TouchInteraction(ctx, key, lm.Network, lm.Channel, now)
+
+	// Must load player from DB
+	p, err := lm.catPlayerRepo.GetPlayerByName(ctx, key, lm.Network, lm.Channel)
+	if err != nil {
+		return 0, 0, err
+	}
+	if p == nil {
+		// ensure row exists
+		if err := lm.catPlayerRepo.UpsertPlayer(ctx, &cat_player.CatPlayer{
+			Name:    key,
+			Network: lm.Network,
+			Channel: lm.Channel,
+		}); err != nil {
+			return 0, 0, err
+		}
+		p, err = lm.catPlayerRepo.GetPlayerByName(ctx, key, lm.Network, lm.Channel)
+		if err != nil || p == nil {
+			return 0, 0, fmt.Errorf("failed to load player %s", key)
+		}
+	}
+
+	// gate: bonded only
+	if ClampLove(p.LoveMeter) != 100 {
+		return 0, 0, nil
+	}
+
+	// once per NY day
+	if p.LastBondPointsAt != nil && sameDayNY(*p.LastBondPointsAt, now) {
+		return 0, p.BondPointStreak, nil
+	}
+
+	// streak rule:
+	// if last award was yesterday -> streak++, else reset to 1
+	newStreak = 1
+	if p.LastBondPointsAt != nil {
+		yesterday := now.AddDate(0, 0, -1)
+		if sameDayNY(*p.LastBondPointsAt, yesterday) {
+			newStreak = p.BondPointStreak + 1
+		}
+	}
+
+	awardedBondPoints = bondPointsForStreak(newStreak)
+
+	// Persist progress
+	if err := lm.catPlayerRepo.SetBondPointStreak(ctx, key, lm.Network, lm.Channel, newStreak); err != nil {
+		return 0, 0, err
+	}
+	if err := lm.catPlayerRepo.AddBondPoints(ctx, key, lm.Network, lm.Channel, awardedBondPoints); err != nil {
+		return 0, 0, err
+	}
+	if err := lm.catPlayerRepo.SetBondPointsAt(ctx, key, lm.Network, lm.Channel, now); err != nil {
+		return 0, 0, err
+	}
+
+	return awardedBondPoints, newStreak, nil
+}
+
+// --------------------------------------------------
+// Daily Decay (DB-driven)
+// --------------------------------------------------
+
 func (lm *LoveMeterImpl) DailyDecayAll(ctx context.Context) error {
 	now := time.Now()
 
@@ -206,17 +300,23 @@ func (lm *LoveMeterImpl) DailyDecayAll(ctx context.Context) error {
 	}
 
 	for _, p := range players {
-		// prevent double decay in a day
 		if p.LastDecayAt != nil && sameDay(*p.LastDecayAt, now) {
 			continue
 		}
-		// if today has interacted, don't decay
 		if p.LastInteractedAt != nil && sameDay(*p.LastInteractedAt, now) {
 			continue
 		}
 
+		// decay 100 -> 95
 		lm.Decrease(p.Name, 5)
-		_ = lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now)
+		if err := lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now); err != nil {
+			log.Printf("failed to set decay at for %s: %v", p.Name, err)
+		}
+
+		// reset bond streak on decay
+		if err := lm.catPlayerRepo.SetBondPointStreak(ctx, p.Name, p.Network, p.Channel, 0); err != nil {
+			log.Printf("failed to reset bond streak for %s: %v", p.Name, err)
+		}
 	}
 
 	return nil
@@ -245,14 +345,23 @@ func (lm *LoveMeterImpl) DailyDecayWithWarning(ctx context.Context) ([]string, e
 		oldLove := p.LoveMeter
 
 		lm.Decrease(p.Name, 5)
-		_ = lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now)
+		if err := lm.catPlayerRepo.SetDecayAt(ctx, p.Name, p.Network, p.Channel, now); err != nil {
+			log.Printf("failed to set decay at for %s: %v", p.Name, err)
+		}
+
+		// reset bond streak on decay
+		if err := lm.catPlayerRepo.SetBondPointStreak(ctx, p.Name, p.Network, p.Channel, 0); err != nil {
+			log.Printf("failed to reset bond streak for %s: %v", p.Name, err)
+		}
 
 		// warning only once: 100 -> 95
 		if oldLove == 100 && !p.PerfectDropWarned {
 			announcements = append(announcements,
 				fmt.Sprintf("😿 Purrito is waiting but %s did not come today, the perfect bond has begun to fade (100%% → 95%%) 🐾", p.Name),
 			)
-			_ = lm.catPlayerRepo.SetPerfectDropWarned(ctx, p.Name, p.Network, p.Channel, true)
+			if err := lm.catPlayerRepo.SetPerfectDropWarned(ctx, p.Name, p.Network, p.Channel, true); err != nil {
+				log.Printf("failed to set perfect drop warned for %s: %v", p.Name, err)
+			}
 		}
 	}
 

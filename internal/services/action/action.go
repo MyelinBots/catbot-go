@@ -1,10 +1,9 @@
-package main
+package action
 
 import (
 	"fmt"
 	"math/rand"
 	"strings"
-	"time"
 )
 
 // CatActions represents the cat's actions and its love meter
@@ -23,7 +22,6 @@ func (a Action) Respond(nick string, love int) string {
 	emotes := []string{
 		"meows happily", "rubs against your leg", "purrs warmly", "nuzzles you gently", "flicks its tail playfully",
 	}
-	rand.Seed(time.Now().UnixNano())
 	reaction := emotes[rand.Intn(len(emotes))]
 	return fmt.Sprintf("%s at %s and your love meter increased to %d%% ❤️", reaction, nick, love)
 }

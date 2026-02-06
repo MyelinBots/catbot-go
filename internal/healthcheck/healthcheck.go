@@ -2,9 +2,11 @@ package healthcheck
 
 import (
 	"context"
-	"github.com/MyelinBots/catbot-go/config"
+	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/MyelinBots/catbot-go/config"
 )
 
 // Healthcheck that starts http server
@@ -13,8 +15,8 @@ func StartHealthcheck(ctx context.Context, cfg config.AppConfig) {
 	go func() {
 		port := strconv.Itoa(cfg.Port)
 		err := http.ListenAndServe(":"+port, HealthCheckHandler())
-		if err != nil {
-			panic(err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("healthcheck server error: %v", err)
 		}
 	}()
 
