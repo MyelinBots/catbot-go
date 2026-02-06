@@ -3,9 +3,12 @@ package bondrewards
 import "strings"
 
 const (
-	Gift7  = 1 << 0
-	Gift14 = 1 << 1
-	Gift30 = 1 << 2
+	Gift7   = 1 << 0
+	Gift14  = 1 << 1
+	Gift21  = 1 << 2
+	Gift30  = 1 << 3
+	Gift45  = 1 << 4
+	Gift100 = 1 << 5 // ✅ Secret Gift (Forever Human)
 )
 
 type Unlock struct {
@@ -16,46 +19,69 @@ type Unlock struct {
 func TitleForHighestStreak(highest int) string {
 	switch {
 	case highest >= 100:
-		return "Eternal Moonbound 🌑♾️"
+		return "\x0304Purrito’s Forever Human 🐾❤️\x0F"
+
 	case highest >= 60:
-		return "Keeper of the Night Purr 🌌🐾"
+		return "\x0306Purrito’s Trusted Companion 🐱\x0F"
+
 	case highest >= 30:
-		return "Lunar Bonded Soul 🌕💫"
+		return "\x0303Deeply Bonded Friend 😽\x0F"
+
 	case highest >= 14:
-		return "Starlight Companion ✨🐱"
+		return "\x0308Warm Purr Companion 🐾\x0F"
+
 	case highest >= 7:
-		return "Moon-Touched Friend 🌙🐾"
+		return "\x0311Getting Purrito’s Trust 🐱\x0F"
+
 	default:
-		return "Soft New Moon 🌙"
+		return "\x0309Just Met Purrito 🐾\x0F"
 	}
 }
 
 func GiftUnlocks(oldHighest, newHighest int) []Unlock {
 	var out []Unlock
+
 	if oldHighest < 7 && newHighest >= 7 {
 		out = append(out, Unlock{
 			GiftMask: Gift7,
-			GiftName: "🔔🌙 Pastel Moon Bell",
+			GiftName: "🐹 Tiny Guinea Pig",
 		})
 	}
+
 	if oldHighest < 14 && newHighest >= 14 {
 		out = append(out, Unlock{
 			GiftMask: Gift14,
-			GiftName: "🎀✨ Starlit Ribbon Collar",
+			GiftName: "🐍 Cute Python",
 		})
 	}
+
+	if oldHighest < 21 && newHighest >= 21 {
+		out = append(out, Unlock{
+			GiftMask: Gift21,
+			GiftName: "🦜 Noisy Parrot",
+		})
+	}
+
 	if oldHighest < 30 && newHighest >= 30 {
 		out = append(out, Unlock{
 			GiftMask: Gift30,
-			GiftName: "🌕💎 Lunar Memory Charm",
+			GiftName: "🐠 Colorful Fish",
 		})
 	}
+
+	if oldHighest < 45 && newHighest >= 45 {
+		out = append(out, Unlock{
+			GiftMask: Gift45,
+			GiftName: "🐱 Friendly Kitten",
+		})
+	}
+
 	return out
 }
 
 func JoinGifts(list []string) string {
 	if len(list) == 0 {
-		return "None yet — Purrito is watching quietly"
+		return "None"
 	}
 	return strings.Join(list, ", ")
 }

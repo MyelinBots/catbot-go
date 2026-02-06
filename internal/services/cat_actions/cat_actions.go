@@ -1,6 +1,7 @@
 package cat_actions
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
 	"github.com/MyelinBots/catbot-go/internal/services/bondpoints"
+	"github.com/MyelinBots/catbot-go/internal/services/bondrewards"
 	"github.com/MyelinBots/catbot-go/internal/services/lovemeter"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -156,16 +158,53 @@ func formatWait(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", hr, min)
 }
 
+func sameDayInNY(a, b time.Time) bool {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.Local
+	}
+
+	aa := a.In(loc)
+	bb := b.In(loc)
+
+	return aa.Year() == bb.Year() && aa.YearDay() == bb.YearDay()
+}
+
+func giftNamesFromMask(mask int) []string {
+	var out []string
+
+	if mask&bondrewards.Gift7 != 0 {
+		out = append(out, "🐹 Tiny Guinea Pig")
+	}
+	if mask&bondrewards.Gift14 != 0 {
+		out = append(out, "🐍 Cute Python")
+	}
+	if mask&bondrewards.Gift21 != 0 {
+		out = append(out, "🦜 Noisy Parrot")
+	}
+	if mask&bondrewards.Gift30 != 0 {
+		out = append(out, "🐠 Colorful Fish")
+	}
+	if mask&bondrewards.Gift45 != 0 {
+		out = append(out, "🐱 Friendly Kitten")
+	}
+	if mask&bondrewards.Gift100 != 0 {
+		out = append(out, "🎁 Secret Gift (Forever Human)")
+	}
+
+	return out
+}
+
 func misuseMessage(player, action, target string) string {
 	pt := cases.Title(language.English).String(target)
 
 	// Special: slap misuse => cat retaliates
 	if action == "slap" {
 		lines := []string{
-			fmt.Sprintf("😾 *scratches %s's face hardly* Why did you slap %s?", player, pt),
-			fmt.Sprintf("😼 *hisses and swats %s* Don’t slap %s", player, pt),
-			fmt.Sprintf("🐾 *claws %s* I did not like you slapping %s", player, pt),
-			fmt.Sprintf("😿 *bites %s lightly* Why would you slap %s?", player, pt),
+			fmt.Sprintf("😾 scratches %s's face hardly... Why did you slap %s?", player, pt),
+			fmt.Sprintf("😼 hisses and swats %s... Don’t slap %s", player, pt),
+			fmt.Sprintf("🐾 claws %s... I did not like you slapping %s", player, pt),
+			fmt.Sprintf("😿 bites %s lightly... Why would you slap %s?", player, pt),
 		}
 		return lines[rand.Intn(len(lines))]
 	}
@@ -173,10 +212,20 @@ func misuseMessage(player, action, target string) string {
 	// Optional: kick misuse => cat retaliates
 	if action == "kick" {
 		lines := []string{
-			fmt.Sprintf("😾 *lunges at %s* Don’t kick %s!", player, pt),
-			fmt.Sprintf("🐾 *scratches %s’s leg* Kicking %s is not okay :()", player, pt),
-			fmt.Sprintf("😼 *hisses at %s* Why would you kick %s?", player, pt),
-			fmt.Sprintf("😿 *bites %s’s ankle* Kicking %s made me sad...", player, pt),
+			fmt.Sprintf("😾 lunges at %s... Don’t kick %s!", player, pt),
+			fmt.Sprintf("🐾 scratches %s’s leg... Kicking %s is not okay :(", player, pt),
+			fmt.Sprintf("😼 hisses at %s... Why would you kick %s?", player, pt),
+			fmt.Sprintf("😿 bites %s’s ankle... Kicking %s made me sad...", player, pt),
+		}
+		return lines[rand.Intn(len(lines))]
+	}
+
+	if action == "laser" {
+		lines := []string{
+			fmt.Sprintf("😼 Why are you using the laser on %s? ... you have to -> !%s purrito", pt, action),
+			fmt.Sprintf("😼 %s is not purrito.,, You have to -> !%s purrito", pt, action),
+			fmt.Sprintf("🐾 Wrong target, %s... You have to -> !%s purrito", player, action),
+			fmt.Sprintf("😿 You seem confused... You have to -> !%s purrito", action),
 		}
 		return lines[rand.Intn(len(lines))]
 	}
@@ -197,10 +246,10 @@ func misuseMessage(player, action, target string) string {
 	}
 
 	lines := []string{
-		fmt.Sprintf("😼 Purrito tilts his head… why are you %s %s? ... you have to -> !%s purrito", verb, pt, action),
-		fmt.Sprintf("😼 Purrito ignores that. %s is not purrito.,, You have to -> !%s purrito", pt, action),
-		fmt.Sprintf("🐾 Wrong target, %s... You have to -> !%s purrito", player, action),
-		fmt.Sprintf("😿 Purrito seems confused... You have to -> !%s purrito", action),
+		fmt.Sprintf("😼 %s blinks at you... You are %s %s, but %s is not me.", pt, verb, pt, pt),
+		fmt.Sprintf("🐾 %s tilts its head in confusion... Why are you %s %s?", pt, verb, pt),
+		fmt.Sprintf("😿 %s looks awkward... I think you meant to do that to Purrito.", pt),
+		fmt.Sprintf("😼 %s ignores you completely... That command is not for me.", pt),
 	}
 	return lines[rand.Intn(len(lines))]
 }
@@ -361,6 +410,7 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 	}
 
 	switch a {
+
 	case "pet", "love":
 		if ok, msg := ca.gatePresenceForAction(a); !ok {
 			return msg
@@ -447,10 +497,10 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 		if !warned {
 			firstWarnings := []string{
 				fmt.Sprintf("😾 Purrito flattens his ears at %s... This is your warning... do not slap him again...", player),
-				fmt.Sprintf("⚠️ Purrito stares at %s with shocked eyes… he did not like that...", player),
-				fmt.Sprintf("😿 Purrito backs away from %s… please be gentle with him", player),
-				fmt.Sprintf("⚠️ Purrito watches %s carefully… one more slap and he will be upset", player),
-				fmt.Sprintf("😼 Purrito lifts a paw at %s in warning… do not try that again...", player),
+				fmt.Sprintf("⚠️ Purrito stares at %s with shocked eyes... he did not like that...", player),
+				fmt.Sprintf("😿 Purrito backs away from %s...please be gentle with him", player),
+				fmt.Sprintf("⚠️ Purrito watches %s carefully... one more slap and he will be upset", player),
+				fmt.Sprintf("😼 Purrito lifts a paw at %s in warning... do not try that again...", player),
 			}
 			return firstWarnings[rand.Intn(len(firstWarnings))]
 		}
@@ -462,10 +512,10 @@ func (ca *CatActions) ExecuteAction(actionName, player, target string) string {
 
 		secondPunishments := []string{
 			fmt.Sprintf("😾 Purrito swats back at %s and looks hurt. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
-			fmt.Sprintf("😾 Purrito hisses softly at %s… his heart hurts. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
-			fmt.Sprintf("😿 Purrito lowers his ears… %s made him sad. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😾 Purrito hisses softly at %s... his heart hurts. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😿 Purrito lowers his ears... %s made him sad. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 			fmt.Sprintf("😿 Purrito looks betrayed by %s. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
-			fmt.Sprintf("😾 Purrito steps back from %s… do not hurt him. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
+			fmt.Sprintf("😾 Purrito steps back from %s... do not hurt him. your love meter decreased to %d%% and purrito is now %s %s", player, love, mood, bar),
 		}
 		return secondPunishments[rand.Intn(len(secondPunishments))]
 
@@ -484,8 +534,12 @@ func (ca *CatActions) acceptMessage(player string) string {
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	base := fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s", emote, player, love, mood, bar)
-	return ca.appendBondProgress(player, base)
+	bonus := ca.tryAwardBondPoints(player) // ✅ เพิ่ม
+
+	base := fmt.Sprintf("%s at %s and your love meter is now %d%% and purrito is now %s %s%s",
+		emote, player, love, mood, bar, bonus)
+
+	return base
 }
 
 func (ca *CatActions) rejectMessage(player string) string {
@@ -557,11 +611,98 @@ func (ca *CatActions) laserRejectMessage(player string) string {
 }
 
 func (ca *CatActions) statusMessage(player string) string {
+	// LoveMeter / Mood
 	love := ca.LoveMeter.Get(player)
 	mood := ca.LoveMeter.GetMood(player)
 	bar := ca.LoveMeter.GetLoveBar(player)
 
-	return fmt.Sprintf("Purrito status for %s and your love meter is %d%% and purrito is now %s %s", player, love, mood, bar)
+	// Presence
+	isHere := ca.IsHere()
+
+	ca.mu.RLock()
+	presentUntil := ca.presentUntil
+	nextSpawn := ca.nextSpawnAt
+	ca.mu.RUnlock()
+
+	now := time.Now()
+
+	// --- Presence line (colored) ---
+	var presenceLine string
+	if isHere && !presentUntil.IsZero() {
+		presenceLine = fmt.Sprintf(
+			"\x0310🐾 Presence:\x0F \x0303HERE\x0F (leaves in %s)",
+			formatWait(time.Until(presentUntil)),
+		)
+	} else {
+		wait := time.Duration(0)
+		if !nextSpawn.IsZero() && now.Before(nextSpawn) {
+			wait = time.Until(nextSpawn)
+		}
+		presenceLine = fmt.Sprintf(
+			"\x0310🐾 Presence:\x0F \x0304AWAY\x0F (back in %s)",
+			formatWait(wait),
+		)
+	}
+
+	// --- Catnip cooldown (colored) ---
+	rem := ca.CatnipRemaining(player)
+	catnipLine := "\x0310🌿 Catnip:\x0F \x0303READY\x0F"
+	if rem > 0 {
+		catnipLine = fmt.Sprintf(
+			"\x0310🌿 Catnip:\x0F \x0308USED\x0F (%s left)",
+			formatWait(rem),
+		)
+	}
+
+	// --- Load player record (read-only) ---
+	p, err := ca.CatPlayerRepo.GetPlayerByName(context.Background(), player, ca.Network, ca.Channel)
+	if err != nil || p == nil {
+		lines := []string{
+			fmt.Sprintf("\x0310😺 Purrito Status for:\x0F \x0300%s\x0F", player),
+			fmt.Sprintf("\x0310Love meter:\x0F %d%%  \x0310Mood:\x0F %s %s", love, mood, bar),
+			presenceLine,
+			catnipLine,
+		}
+		return strings.Join(lines, " | ")
+	}
+
+	// --- Main progression (HighestStreak + title) ---
+	title := bondrewards.TitleForHighestStreak(p.HighestStreak)
+	mainLine := fmt.Sprintf("\x0310HighestStreak:\x0F %d | \x0310Title:\x0F %s", p.HighestStreak, title)
+
+	// --- BondPoints progression ---
+	bpLine := fmt.Sprintf(
+		"\x0310BondPoints:\x0F %d | \x0310Streak:\x0F %d | \x0310HighestBP:\x0F %d",
+		p.BondPoints, p.BondPointStreak, p.HighestBondStreak,
+	)
+
+	// --- BondPoints today availability (colored) ---
+	bpReady := "\x0304LOCKED\x0F (need HighestStreak \u2265 100)"
+	if p.HighestStreak >= 100 {
+		bpReady = "\x0303READY\x0F"
+		if p.LastBondPointsAt != nil && sameDayInNY(*p.LastBondPointsAt, now) {
+			bpReady = "\x0308ALREADY AWARDED TODAY\x0F"
+		}
+	}
+	bpReadyLine := fmt.Sprintf("\x0310BondPoints Today:\x0F %s", bpReady)
+
+	// --- Gifts (colored label) ---
+	gifts := giftNamesFromMask(p.GiftsUnlocked)
+	giftsLine := fmt.Sprintf("\x0310Gifts:\x0F %s", bondrewards.JoinGifts(gifts))
+
+	// --- Final output (multi-line, readable) ---
+	lines := []string{
+		fmt.Sprintf("\x0310😺 Purrito Status for:\x0F \x0300%s\x0F", player),
+		fmt.Sprintf("\x0310Love meter:\x0F %d%%  \x0310Mood:\x0F %s %s", love, mood, bar),
+		presenceLine,
+		catnipLine,
+		mainLine,
+		bpLine,
+		bpReadyLine,
+		giftsLine,
+	}
+
+	return strings.Join(lines, " | ")
 }
 
 // catnipMessage assumes cooldown was checked BEFORE calling it.
@@ -604,15 +745,15 @@ func (ca *CatActions) catnipMessage(player string) string {
 // for the full spawnWindow (timeout) and nobody interacted.
 func timeoutLeaveMessage() string {
 	lines := []string{
-		"(=^‥^=)っ ...looks around… no one came. He quietly walks away...",
+		"(=^‥^=)っ ...looks around... no one came. He quietly walks away...",
 		"(=^‥^=)っ ...stretches, yawns, and wanders off...",
-		"(=^‥^=)っ ...blinks slowly… then disappears into the night...",
-		"(=^‥^=)っ ...waits patiently… then gives up and leaves...",
+		"(=^‥^=)っ ...blinks slowly... then disappears into the night...",
+		"(=^‥^=)っ ...waits patiently... then gives up and leaves...",
 		"(=^‥^=)っ ...decides to explore somewhere else and slips away...",
 		"(=^‥^=)っ ...flicks his tail, bored of waiting, and walks off...",
-		"(=^‥^=)っ ...pads away softly… you barely notice he’s gone...",
+		"(=^‥^=)っ ...pads away softly... you barely notice he is gone...",
 		"(=^‥^=)っ ...hops onto a fence and vanishes...",
-		"(=^‥^=)っ ...Time’s up… Purrito got tired of waiting and left...",
+		"(=^‥^=)っ ...Time’s up... Purrito got tired of waiting and left...",
 	}
 	return lines[rand.Intn(len(lines))]
 }
@@ -653,4 +794,31 @@ func (ca *CatActions) TickPresence() (spawnMsg string, leaveMsg string) {
 	spawnMsg = ca.PopSpawnMessage()
 	leaveMsg = ca.PopLeaveMessage()
 	return
+}
+
+func (ca *CatActions) tryAwardBondPoints(player string) string {
+	// เรียกหลัง "สำเร็จ" เท่านั้น
+	res, err := ca.BondPoints.RecordBondedInteraction(context.Background(), player, ca.Network, ca.Channel)
+	if err != nil {
+		// อย่าให้พังเกมหลัก แค่แนบข้อความเบาๆ
+		return ""
+	}
+
+	// ถ้าวันนี้ได้ 0 แปลว่า: (1) ให้ไปแล้ววันนี้ หรือ (2) ยังไม่ถึง gate
+	if res.AwardedPoints <= 0 {
+		return ""
+	}
+
+	// แนบข้อความสั้นๆ ให้รู้สึก rewarding
+	return fmt.Sprintf(" ✨ +%d BondPoints (Total: %d ::: BP Streak: %d)", res.AwardedPoints, res.TotalPoints, res.Streak)
+}
+
+func (ca *CatActions) HandleStatus(sender string, args []string) string {
+	target := sender // default: self
+
+	if len(args) >= 1 {
+		target = args[0]
+	}
+
+	return ca.statusMessage(target)
 }

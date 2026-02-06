@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MyelinBots/catbot-go/internal/db/repositories/cat_player"
+	"github.com/MyelinBots/catbot-go/internal/services/bondrewards"
 )
 
 type Result struct {
@@ -17,7 +18,7 @@ type Result struct {
 }
 
 type Service interface {
-	// Only call when LoveMeter == 100 (bonded)
+	// Only call when HighestStreak >= 100 (Forever Human)
 	RecordBondedInteraction(ctx context.Context, nick, network, channel string) (Result, error)
 }
 
@@ -74,6 +75,18 @@ func (s *Impl) RecordBondedInteraction(ctx context.Context, nick, network, chann
 		}
 	}
 
+	// Gate: must be Forever Human by main streak (NOT LoveMeter)
+	if p.HighestStreak < 100 {
+		return Result{
+			AwardedPoints: 0,
+			TotalPoints:   p.BondPoints,
+			Streak:        p.BondPointStreak,
+			HighestStreak: p.HighestBondStreak,
+			GiftsUnlocked: p.GiftsUnlocked,
+		}, nil
+	}
+
+	// One award per NY day
 	if p.LastBondPointsAt != nil && s.sameDayNY(*p.LastBondPointsAt, now) {
 		return Result{
 			AwardedPoints: 0,
@@ -84,6 +97,7 @@ func (s *Impl) RecordBondedInteraction(ctx context.Context, nick, network, chann
 		}, nil
 	}
 
+	// Compute streak (daily)
 	newStreak := 1
 	if p.LastBondPointsAt != nil {
 		yesterday := now.AddDate(0, 0, -1)
@@ -99,6 +113,7 @@ func (s *Impl) RecordBondedInteraction(ctx context.Context, nick, network, chann
 		newHighest = newStreak
 	}
 
+	// Persist award
 	if err := s.repo.SetBondPointStreak(ctx, nick, network, channel, newStreak); err != nil {
 		return Result{}, err
 	}
@@ -114,6 +129,14 @@ func (s *Impl) RecordBondedInteraction(ctx context.Context, nick, network, chann
 		}
 	}
 
+	// ✅ Unlock Gift100 ONLY when a real award happens (this call) and not unlocked yet
+	if (p.GiftsUnlocked & bondrewards.Gift100) == 0 {
+		if err := s.repo.AddGiftsUnlocked(ctx, nick, network, channel, bondrewards.Gift100); err != nil {
+			return Result{}, err
+		}
+	}
+
+	// Refresh for accurate totals/gifts
 	p2, _ := s.repo.GetPlayerByName(ctx, nick, network, channel)
 	total := p.BondPoints + pts
 	gifts := p.GiftsUnlocked

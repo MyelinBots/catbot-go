@@ -39,6 +39,8 @@ type CatPlayer struct {
 
 	// bitmask gifts
 	GiftsUnlocked int `gorm:"column:gifts_unlocked;type:int;not null;default:0"`
+
+	HighestStreak int `gorm:"column:highest_streak;type:int;not null;default:0" json:"highest_streak"`
 }
 
 /*
@@ -281,12 +283,10 @@ func (r *CatPlayerRepositoryImpl) AddGiftsUnlocked(ctx context.Context, name, ne
 	name = norm(name)
 	network, channel = normScope(network, channel)
 
-	return r.db.DB.WithContext(ctx).Exec(
-		`UPDATE cat_player
-		 SET gifts_unlocked = (gifts_unlocked | ?)
-		 WHERE name = ? AND network = ? AND channel = ?`,
-		giftMask, name, network, channel,
-	).Error
+	return r.db.DB.WithContext(ctx).
+		Model(&CatPlayer{}).
+		Where("name = ? AND network = ? AND channel = ?", name, network, channel).
+		UpdateColumn("gifts_unlocked", gorm.Expr("gifts_unlocked | ?", giftMask)).Error
 }
 
 func (r *CatPlayerRepositoryImpl) SetGiftsUnlocked(ctx context.Context, name, network, channel string, giftsUnlocked int) error {

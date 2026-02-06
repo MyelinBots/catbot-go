@@ -177,17 +177,22 @@ func (lm *LoveMeterImpl) GetLoveBar(player string) string {
 
 func (lm *LoveMeterImpl) GetMood(player string) string {
 	love := lm.Get(player)
+
 	switch {
 	case love == 0:
-		return "hostile 😾"
+		return "\x0304hostile 😾\x0F" // red
+
 	case love < 20:
-		return "sad 😿"
+		return "\x0307sad 😿\x0F" // Orange
+
 	case love < 50:
-		return "cautious 😼"
+		return "\x0308cautious 😼\x0F" // yellow
+
 	case love < 80:
-		return "friendly 😺"
+		return "\x0303friendly 😺\x0F" // green
+
 	default:
-		return "loves you 😻"
+		return "\x0306loves you 😻\x0F" // purple / pinkish
 	}
 }
 
